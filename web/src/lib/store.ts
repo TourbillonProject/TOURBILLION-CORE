@@ -73,7 +73,11 @@ export interface State {
   booted: boolean;
   reply: { text: string; from: 'core' | 'system'; at: number; conversationId: number | null; pending: boolean } | null;
   commandConversationId: number | null;
+  /** Command for the Browser section; kept until the section mounts and consumes it. */
+  browserCommand: (BrowserCommand & { nonce: number }) | null;
 }
+
+export type BrowserCommand = { kind: 'open_url'; url: string; mode?: 'auto' | 'live' | 'reader' } | { kind: 'open_youtube'; query?: string; videoId?: string };
 
 const initial: State = {
   auth: { checked: false, setupRequired: false, authenticated: false },
@@ -98,6 +102,7 @@ const initial: State = {
   booted: false,
   reply: null,
   commandConversationId: null,
+  browserCommand: null,
 };
 
 let state: State = initial;
@@ -118,8 +123,18 @@ export function subscribe(fn: () => void) {
   return () => listeners.delete(fn);
 }
 
+/**
+ * Selectors must return existing references (or primitives). Derive filtered
+ * arrays in the component with useMemo — a selector that builds a new array
+ * on every call makes React re-render forever.
+ */
 export function useStore<T>(selector: (s: State) => T): T {
   return useSyncExternalStore(subscribe, () => selector(state), () => selector(initial));
+}
+
+const EMPTY: never[] = [];
+export function emptyArray<T>(): T[] {
+  return EMPTY as T[];
 }
 
 // ---- routing (hash based: #/section/param) ----------------------------------
@@ -143,6 +158,13 @@ export function toast(level: NotificationRecord['level'], title: string, body = 
   const t = { id: -1, level, title, body, link: null, read: false, createdAt: new Date().toISOString(), toastId: ++toastSeq };
   setState((s) => ({ toasts: [...s.toasts.slice(-3), t] }));
   setTimeout(() => setState((s) => ({ toasts: s.toasts.filter((x) => x.toastId !== t.toastId) })), level === 'error' ? 8000 : 5000);
+}
+
+let commandSeq = 0;
+/** Opens the Browser and hands it a command (works even before its code has loaded). */
+export function sendBrowserCommand(cmd: BrowserCommand) {
+  setState({ browserCommand: { ...cmd, nonce: ++commandSeq } });
+  navigate('browser');
 }
 
 export function upsertTask(t: TaskRecord) {

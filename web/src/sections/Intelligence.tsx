@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { ApprovalRecord } from '@tc/shared';
 import { api, errMsg } from '../lib/api';
 import { navigate, setState, toast, useStore } from '../lib/store';
@@ -77,7 +77,8 @@ function ChatView({ id, projects, onChanged }: { id: number; projects: { id: num
   const [conv, setConv] = useState<(Conv & { messages: Msg[]; approvals: ApprovalRecord[] }) | null>(null);
   const [text, setText] = useState('');
   const stream = useStore((s) => s.chat[id]);
-  const pendingApprovals = useStore((s) => s.approvals.filter((a) => a.conversationId === id));
+  const allApprovals = useStore((s) => s.approvals);
+  const pendingApprovals = useMemo(() => allApprovals.filter((a) => a.conversationId === id), [allApprovals, id]);
   const aiState = useStore((s) => s.integrations.find((i) => i.id === 'claude')?.state);
   const listening = useStore((s) => s.voice.listening);
   const bottom = useRef<HTMLDivElement>(null);

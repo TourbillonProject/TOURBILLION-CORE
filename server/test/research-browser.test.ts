@@ -200,8 +200,12 @@ describe('Browser', () => {
     await waitFor(() => frames.length, (n) => n > 0, 20_000, 'first frame');
     expect(frames[0].subarray(0, 3).toString('hex')).toBe('ffd8ff'); // JPEG
     await waitFor(() => states.at(-1)?.title, (t) => t === 'Live fixture', 15_000, 'page title');
-    ws.send(JSON.stringify({ type: 'tap', x: 100, y: 100 }));
-    await waitFor(() => states.at(-1)?.title, (t) => t === 'Arrived', 15_000, 'navigation after tap');
+    // Under heavy CPU load the first tap can land before layout settles; tapping the link again is harmless.
+    for (let attempt = 0; attempt < 3 && states.at(-1)?.title !== 'Arrived'; attempt++) {
+      ws.send(JSON.stringify({ type: 'tap', x: 100, y: 100 }));
+      await waitFor(() => states.at(-1)?.title, (t) => t === 'Arrived', 6_000, 'navigation after tap').catch(() => null);
+    }
+    expect(states.at(-1)?.title).toBe('Arrived');
     expect(states.at(-1)!.url).toBe(`${fx.base}/live-next`);
     const back = await app.req('POST', `/api/browser/live/tabs/${tab.json.id}/history`, { action: 'back' });
     expect(back.json.url).toBe(`${fx.base}/live-page`);

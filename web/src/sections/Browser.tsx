@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import DOMPurify from 'dompurify';
 import { api, errMsg } from '../lib/api';
-import { toast, useStore, navigate } from '../lib/store';
+import { setState, toast, useStore, navigate } from '../lib/store';
 import { Icon } from '../components/icons';
 import { Markdown } from '../components/Markdown';
 import { Empty, Sheet } from '../components/ui';
@@ -70,6 +70,8 @@ export default function Browser() {
   const [active, setActive] = useState(() => tabs[0].id);
   const [address, setAddress] = useState('');
   const [liveAvailable, setLiveAvailable] = useState(false);
+  // Rendering mode chosen in the toolbar; applies to addresses typed into the bar.
+  const [prefMode, setPrefMode] = useState<'auto' | 'live' | 'reader'>('auto');
   const [summary, setSummary] = useState<{ title: string; summary: string } | null>(null);
   const tab = tabs.find((t) => t.id === active) ?? tabs[0];
 
@@ -122,27 +124,28 @@ export default function Browser() {
     setTabs((ts) =>
       ts.map((t) => {
         if (t.id !== id) return t;
-        const history = push ? [...t.history.slice(0, t.index + 1), { mode: next.mode, url: next.url }] : t.history;
+        // push: new entry; otherwise (mode switch / reload) replace the current entry so Back/Forward stay accurate.
+        const entry = { mode: next.mode, url: next.url };
+        const history = push ? [...t.history.slice(0, t.index + 1), entry] : t.history.map((h, i) => (i === t.index ? entry : h));
         return { ...t, ...next, history, index: push ? history.length - 1 : t.index, liveTabId: next.mode === 'live' ? t.liveTabId : t.liveTabId };
       }),
     );
   };
 
-  // Commands from Core Intelligence / voice ("open YouTube", "open bbc.co.uk").
+  // Commands from Core Intelligence / voice ("open YouTube", "open bbc.co.uk"). Consumed once, even if
+  // they were issued before this (lazily loaded) section mounted.
+  const pending = useStore((s) => s.browserCommand);
+  const handled = useRef(0);
   useEffect(() => {
-    const onCmd = (e: Event) => {
-      const c = (e as CustomEvent).detail as { kind: string; url?: string; mode?: 'auto' | 'live' | 'reader'; query?: string; videoId?: string };
-      const t = homeTab();
-      setTabs((ts) => [...ts, t]);
-      setActive(t.id);
-      setTimeout(() => {
-        if (c.kind === 'open_url' && c.url) void go(c.url, { mode: c.mode, tabId: t.id }).catch((err) => toast('error', 'Could not open page', errMsg(err)));
-        if (c.kind === 'open_youtube') navigateTab(t.id, { mode: 'youtube', url: 'https://www.youtube.com', title: 'YouTube', yt: { query: c.query ?? null, videoId: c.videoId ?? null } }, true);
-      }, 0);
-    };
-    window.addEventListener('tc:browser-command', onCmd);
-    return () => window.removeEventListener('tc:browser-command', onCmd);
-  }, [go]);
+    if (!pending || pending.nonce === handled.current) return;
+    handled.current = pending.nonce;
+    setState({ browserCommand: null });
+    const t = homeTab();
+    setTabs((ts) => [...ts, t]);
+    setActive(t.id);
+    if (pending.kind === 'open_url') void go(pending.url, { mode: pending.mode, tabId: t.id }).catch((err) => toast('error', 'Could not open page', errMsg(err)));
+    else navigateTab(t.id, { mode: 'youtube', url: 'https://www.youtube.com', title: 'YouTube', yt: { query: pending.query ?? null, videoId: pending.videoId ?? null } }, true);
+  }, [pending, go]);
 
   const historyMove = async (delta: number) => {
     if (tab.mode === 'live' && tab.liveTabId) {
@@ -185,12 +188,16 @@ export default function Browser() {
         ))}
         <button className="btn ghost sm icon" onClick={() => { const t = homeTab(); setTabs((ts) => [...ts, t]); setActive(t.id); }} aria-label="New tab"><Icon name="plus" size={18} /></button>
       </div>
-      <form className="addrbar" onSubmit={(e) => { e.preventDefault(); void go(address).catch((err) => toast('error', 'Navigation failed', errMsg(err))); }}>
+      <form className="addrbar" onSubmit={(e) => { e.preventDefault(); void go(address, { mode: prefMode }).catch((err) => toast('error', 'Navigation failed', errMsg(err))); }}>
         <button type="button" className="btn ghost sm icon" onClick={() => void historyMove(-1)} aria-label="Back"><Icon name="back" size={18} /></button>
         <button type="button" className="btn ghost sm icon" onClick={() => void historyMove(1)} aria-label="Forward"><Icon name="forward" size={18} /></button>
         <button type="button" className="btn ghost sm icon" onClick={() => (tab.mode === 'live' && tab.liveTabId ? api.post(`/api/browser/live/tabs/${tab.liveTabId}/history`, { action: 'reload' }) : tab.url && go(tab.url, { mode: tab.mode === 'reader' ? 'reader' : 'auto', push: false }))} aria-label="Reload"><Icon name="reload" size={18} /></button>
         <input className="input" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Search or enter address — e.g. youtube.com" inputMode="url" autoCapitalize="off" autoCorrect="off" enterKeyHint="go" data-testid="address" />
-        <select className="select" style={{ width: 'auto', minHeight: 40 }} value={tab.mode === 'live' ? 'live' : tab.mode === 'reader' ? 'reader' : 'auto'} onChange={(e) => tab.url && /^https?:/.test(tab.url) && void go(tab.url, { mode: e.target.value as 'auto' | 'live' | 'reader', push: false })} aria-label="Rendering mode">
+        <select className="select" style={{ width: 'auto', minHeight: 40 }} value={tab.mode === 'live' ? 'live' : tab.mode === 'reader' ? 'reader' : prefMode} onChange={(e) => {
+          const m = e.target.value as 'auto' | 'live' | 'reader';
+          setPrefMode(m);
+          if (tab.url && /^https?:/.test(tab.url)) void go(tab.url, { mode: m, push: false });
+        }} aria-label="Rendering mode">
           <option value="auto">Auto</option>
           <option value="live" disabled={!liveAvailable}>Live</option>
           <option value="reader">Reader</option>

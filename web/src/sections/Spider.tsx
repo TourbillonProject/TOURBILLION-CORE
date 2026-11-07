@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { TERMINAL_TASK_STATUSES, type TaskRecord } from '@tc/shared';
+import { TERMINAL_TASK_STATUSES, type TaskRecord, type TaskStep } from '@tc/shared';
 import { api, errMsg } from '../lib/api';
-import { navigate, toast, useStore } from '../lib/store';
+import { emptyArray, navigate, toast, useStore } from '../lib/store';
 import { ActionButton, Diff, Empty, Panel, Seg, StatusBadge } from '../components/ui';
 import { ApprovalCard } from '../components/Approvals';
 import { Markdown } from '../components/Markdown';
@@ -107,9 +107,10 @@ export default function Spider() {
 
 function SpiderMission({ id }: { id: number }) {
   const task = useStore((s) => s.tasks[id]);
-  const files = useStore((s) => s.spiderFiles[id] ?? []);
-  const liveSteps = useStore((s) => s.taskSteps[id] ?? []);
-  const approvals = useStore((s) => s.approvals.filter((a) => a.taskId === id));
+  const files = useStore((s) => s.spiderFiles[id]) ?? emptyArray<string>();
+  const liveSteps = useStore((s) => s.taskSteps[id]) ?? emptyArray<TaskStep>();
+  const allApprovals = useStore((s) => s.approvals);
+  const approvals = useMemo(() => allApprovals.filter((a) => a.taskId === id), [allApprovals, id]);
   const [d, setD] = useState<Detail | null>(null);
   const [sev, setSev] = useState('low');
   const load = () => api.get<Detail>(`/api/missions/${id}`).then(setD).catch(() => {});

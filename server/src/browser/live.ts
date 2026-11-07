@@ -33,6 +33,7 @@ interface PWPage {
   on(ev: string, fn: (...a: unknown[]) => void): void;
   context(): { newCDPSession(p: PWPage): Promise<CDPSession> };
   isClosed(): boolean;
+  opener(): Promise<PWPage | null>;
 }
 interface CDPSession {
   send(method: string, params?: unknown): Promise<unknown>;
@@ -139,9 +140,11 @@ export class LiveBrowser {
         });
       }
       this.context.on('page', (p) => {
-        // Popups (target=_blank / window.open) become new tabs.
+        // Popups (target=_blank / window.open) become new tabs. Pages we open ourselves have no opener.
         const page = p as PWPage;
-        if (![...this.tabs.values()].some((t) => t.page === page)) void this.adopt(page);
+        void page.opener().then((opener) => {
+          if (opener && ![...this.tabs.values()].some((t) => t.page === page)) void this.adopt(page).catch(() => {});
+        });
       });
     })();
     try {
@@ -173,8 +176,13 @@ export class LiveBrowser {
 
   private async adopt(page: PWPage): Promise<Tab> {
     if (this.tabs.size >= this.config.browser.maxTabs) {
-      await page.close();
-      throw new Error(`Tab limit reached (${this.config.browser.maxTabs}). Close a tab first.`);
+      // Evict the least-recently-used tab nobody is watching; refuse only if all are in use.
+      const idle = [...this.tabs.values()].filter((t) => t.viewers.size === 0).sort((a, b) => a.lastActiveAt - b.lastActiveAt)[0];
+      if (idle) await this.close(idle.id);
+      else {
+        await page.close();
+        throw new Error(`Tab limit reached (${this.config.browser.maxTabs}) and every tab is in use. Close a tab first.`);
+      }
     }
     const tab: Tab = {
       id: crypto.randomBytes(6).toString('hex'),

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { AGENT_IDS, TERMINAL_TASK_STATUSES, type AgentId, type ApprovalRecord, type TaskRecord, type TaskStep } from '@tc/shared';
 import { api, errMsg } from '../lib/api';
 import { navigate, toast, useStore } from '../lib/store';
@@ -103,7 +103,8 @@ function MissionView({ id }: { id: number }) {
   const [m, setM] = useState<MissionDetail | null>(null);
   const live = useStore((s) => s.tasks[id]);
   const liveSteps = useStore((s) => s.taskSteps[id]);
-  const approvals = useStore((s) => s.approvals.filter((a) => a.taskId === id));
+  const allApprovals = useStore((s) => s.approvals);
+  const approvals = useMemo(() => allApprovals.filter((a) => a.taskId === id), [allApprovals, id]);
   const load = () => api.get<MissionDetail>(`/api/missions/${id}`).then(setM).catch((e) => toast('error', 'Could not load mission', errMsg(e)));
   useEffect(() => {
     void load();

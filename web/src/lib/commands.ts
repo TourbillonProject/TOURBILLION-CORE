@@ -1,7 +1,7 @@
 import type { TaskRecord } from '@tc/shared';
 import { api, errMsg } from './api';
 import { parseIntent } from './intents';
-import { getState, navigate, setState, toast } from './store';
+import { getState, navigate, sendBrowserCommand, setState, toast } from './store';
 import { sound } from '../audio/sound';
 import { speakable, voice } from '../voice/voice';
 
@@ -85,13 +85,11 @@ export async function runCommand(raw: string, opts: { spoken: boolean }) {
         navigate(intent.section);
         return;
       case 'youtube':
-        navigate('browser');
-        setTimeout(() => window.dispatchEvent(new CustomEvent('tc:browser-command', { detail: { kind: 'open_youtube', query: intent.query ?? undefined } })), 60);
+        sendBrowserCommand({ kind: 'open_youtube', query: intent.query ?? undefined });
         say(intent.query ? `Searching YouTube for ${intent.query}.` : 'Opening YouTube.', 'system', speak);
         return;
       case 'open_url':
-        navigate('browser');
-        setTimeout(() => window.dispatchEvent(new CustomEvent('tc:browser-command', { detail: { kind: 'open_url', url: intent.url, mode: 'auto' } })), 60);
+        sendBrowserCommand({ kind: 'open_url', url: intent.url, mode: 'auto' });
         say(`Opening ${new URL(intent.url).hostname}.`, 'system', speak);
         return;
       case 'diagnostics': {

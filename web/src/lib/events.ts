@@ -1,7 +1,7 @@
 import type { AgentInfo, ApprovalRecord, IntegrationStatus, NotificationRecord, ServerEvent, SystemStatus, TaskRecord } from '@tc/shared';
 import { TERMINAL_TASK_STATUSES } from '@tc/shared';
 import { api } from './api';
-import { getState, navigate, setState, toast, upsertTask } from './store';
+import { getState, navigate, sendBrowserCommand, setState, toast, upsertTask } from './store';
 import { sound } from '../audio/sound';
 
 /**
@@ -147,11 +147,8 @@ function handle(e: ServerEvent) {
       break;
     case 'ui.command':
       if (e.command.kind === 'navigate') navigate(e.command.section);
-      else {
-        navigate('browser');
-        // The Browser section may not be mounted yet; let it pick the command up after render.
-        setTimeout(() => window.dispatchEvent(new CustomEvent('tc:browser-command', { detail: e.command })), 50);
-      }
+      else if (e.command.kind === 'open_url') sendBrowserCommand({ kind: 'open_url', url: e.command.url, mode: e.command.mode });
+      else sendBrowserCommand({ kind: 'open_youtube', query: e.command.query, videoId: e.command.videoId });
       break;
     case 'hello':
       break;

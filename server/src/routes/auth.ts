@@ -41,7 +41,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: Ctx) {
     };
   });
 
-  app.post('/api/auth/setup', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
+  app.post('/api/auth/setup', { config: { rateLimit: { max: ctx.config.authRateLimitPerMinute, timeWindow: '1 minute' } } }, async (req, reply) => {
     if (!requireCsrf(req, reply)) return;
     if (ctx.auth.hasOwner()) return reply.code(409).send({ error: 'already_setup', message: 'This system already has an owner.' });
     const body = z.object({ setupCode: z.string().min(4).max(40), passphrase: passphraseSchema, ownerName: z.string().min(1).max(60).optional() }).safeParse(req.body);
@@ -58,7 +58,7 @@ export function registerAuthRoutes(app: FastifyInstance, ctx: Ctx) {
     return { ok: true };
   });
 
-  app.post('/api/auth/login', { config: { rateLimit: { max: 10, timeWindow: '1 minute' } } }, async (req, reply) => {
+  app.post('/api/auth/login', { config: { rateLimit: { max: ctx.config.authRateLimitPerMinute, timeWindow: '1 minute' } } }, async (req, reply) => {
     if (!requireCsrf(req, reply)) return;
     const body = z.object({ passphrase: z.string().min(1).max(200) }).safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid', message: 'Passphrase required.' });
