@@ -1,7 +1,8 @@
 import type { AgentInfo, ApprovalRecord, IntegrationStatus, NotificationRecord, ServerEvent, SystemStatus, TaskRecord } from '@tc/shared';
 import { TERMINAL_TASK_STATUSES } from '@tc/shared';
 import { api } from './api';
-import { getState, navigate, sendBrowserCommand, setState, toast, upsertTask } from './store';
+import { getState, navigate, sendBrowserCommand, setState, toast, upsertTask, type TelemetryMeta } from './store';
+import type { TelemetrySample } from '@tc/shared';
 import { sound } from '../audio/sound';
 
 /**
@@ -14,6 +15,25 @@ let ws: WebSocket | null = null;
 let retry = 0;
 let timer: number | null = null;
 let stopped = false;
+let pingTimer: number | null = null;
+let pingSentAt = 0;
+
+/** Measures the realtime link's round-trip time (the server answers 'ping' with {"type":"pong"}). */
+function sendPing() {
+  if (!ws || ws.readyState !== WebSocket.OPEN || document.hidden) return;
+  pingSentAt = performance.now();
+  try {
+    ws.send('ping');
+  } catch {
+    /* closing */
+  }
+}
+
+export async function loadTelemetry() {
+  const snap = await api.get<TelemetryMeta & { history: TelemetrySample[] }>('/api/system/telemetry');
+  const { history, ...meta } = snap;
+  setState({ telemetry: history, telemetryMeta: meta });
+}
 
 export async function resync() {
   const [status, agents, tasks, approvals, notifications, integrations] = await Promise.all([
@@ -42,17 +62,32 @@ export function connect() {
     retry = 0;
     setState({ ws: 'live' });
     resync().catch(() => {});
+    loadTelemetry().catch(() => {});
+    sendPing();
+    if (pingTimer) clearInterval(pingTimer);
+    pingTimer = window.setInterval(sendPing, 5000);
   };
   sock.onmessage = (ev) => {
     try {
-      handle(JSON.parse(String(ev.data)) as ServerEvent);
+      const msg = JSON.parse(String(ev.data)) as ServerEvent | { type: 'pong' };
+      if (msg.type === 'pong') {
+        if (!pingSentAt) return;
+        const ms = Math.round(performance.now() - pingSentAt);
+        pingSentAt = 0;
+        setState((s) => ({ link: { latencyMs: ms, history: [...s.link.history, ms].slice(-60) } }));
+        return;
+      }
+      handle(msg);
     } catch {
       /* ignore malformed */
     }
   };
   sock.onclose = (ev) => {
     ws = null;
-    setState({ ws: 'offline' });
+    if (pingTimer) clearInterval(pingTimer);
+    pingTimer = null;
+    pingSentAt = 0;
+    setState((s) => ({ ws: 'offline', link: { latencyMs: null, history: s.link.history } }));
     if (ev.code === 4401) {
       window.dispatchEvent(new CustomEvent('tc:unauthenticated'));
       return;
@@ -102,6 +137,7 @@ function handle(e: ServerEvent) {
       if (!prev && e.task.status === 'pending') sound.play('deploy');
       if (prev && prev.status !== e.task.status && TERMINAL_TASK_STATUSES.includes(e.task.status)) {
         sound.play(e.task.status === 'completed' ? 'complete' : e.task.status === 'failed' ? 'error' : 'warning');
+        if (e.task.status === 'completed') setState({ successAt: Date.now() });
       }
       break;
     }
@@ -134,7 +170,11 @@ function handle(e: ServerEvent) {
     }
     case 'notification':
       setState((s) => ({ notifications: [e.notification, ...s.notifications].slice(0, 100) }));
-      if (e.notification.level !== 'warning') toast(e.notification.level, e.notification.title, e.notification.body);
+      if (e.notification.level !== 'warning') toast(e.notification.level, e.notification.title, e.notification.body, e.notification.link);
+      if (e.notification.level === 'info') sound.play('notify');
+      break;
+    case 'telemetry':
+      setState((s) => ({ telemetry: [...s.telemetry, e.sample].slice(-180) }));
       break;
     case 'integration.updated':
       setState((s) => ({ integrations: s.integrations.some((i) => i.id === e.integration.id) ? s.integrations.map((i) => (i.id === e.integration.id ? e.integration : i)) : [...s.integrations, e.integration] }));

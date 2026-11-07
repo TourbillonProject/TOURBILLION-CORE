@@ -36,7 +36,7 @@ server/
   src/config.ts            Environment configuration
   src/db.ts                node:sqlite wrapper + append-only migrations
   src/security/            auth (owner, sessions), crypto (scrypt, AES-GCM), secrets, net (SSRF-guarded fetch)
-  src/services/            event bus, audit log, settings, notifications, integration registry
+  src/services/            event bus, audit log, settings, notifications, integration registry, telemetry sampler
   src/ai/                  provider interface, Anthropic provider, AIService
   src/agents/              agent definitions & prompts, permission gate, AgentRunner (tool loop)
   src/tools/               tool registry and every tool (memory, system, web, OSINT, Spider, Gmail, bridge)
@@ -53,11 +53,13 @@ server/
   test/                    55+ integration tests, Messages-API double, fixtures
 web/
   src/App.tsx              shell: auth, navigation, top bar, boot sequence
-  src/core/                Three.js core, 2D fallback, state parameters, state derivation
+  src/core/                Three.js core (quality tiers, bloom, boot), 2D fallback, state parameters, state derivation, host view
   src/sections/            Command Center, Intelligence, Agents, Spider, Browser, Research, Projects,
                            Missions, Automations, Connected Apps, Memory, Settings
-  src/components/          UI kit, safe Markdown, approvals, command bar, icons
-  src/lib/                 API client, store, realtime events, command intents
+  src/sections/command/    Command Center panels: system intelligence, mission control, agent cards,
+                           connected apps, analytics, live panels, diagnostics sheets
+  src/components/          UI kit, safe Markdown, approvals, command bar, icons, charts (viz.tsx), ambient background
+  src/lib/                 API client, store, realtime events (telemetry, link latency), command intents, pointer motion
   src/voice/ · src/audio/  speech recognition/synthesis; synthesised sound engine
   public/                  manifest, service worker, icons
   e2e/                     Playwright iPad suite and harness
@@ -81,6 +83,12 @@ docs/                      setup, environment, architecture, security, testing, 
 - **Agent missions**: Claude produces a plan with structured output (interpretation, steps, required permissions, success criteria). Plans with side effects wait for approval; approved write-level tools are pre-approved, sensitive ones still ask per call. After execution the agent verifies its work against the criteria (structured verdict) — the verdict, evidence and unverified items are stored.
 - **Playbooks**: deterministic pipelines (Spider inspection, OSINT report, diagnostics, health checks, inbox digest, Blender preview) that use the same tools, gate and audit, and work without an AI key; Claude adds synthesis when connected.
 - On restart, in-flight missions are marked interrupted (retry available); missions waiting for approval stay resumable.
+
+### Telemetry
+`services/telemetry.ts` samples every 2 s: CPU from `os.cpus()` time deltas, memory, process RSS/heap, event-loop lag (`perf_hooks`), network bytes from `/proc/net/dev` (null where it does not exist), database size and per-minute application counters (HTTP requests, events, AI turns, tool calls). It keeps 180 samples, serves them at `GET /api/system/telemetry`, and pushes `telemetry` events only while a client is connected. `GET /api/ai/diagnostics` adds latency, first-token time, error counts and today's token usage from the `runs` table. The client measures the realtime link's round-trip time with `ping`/`pong` every 5 s.
+
+### The visual core
+`CoreView` picks the renderer (`core3d.ts`, lazily loaded with Three.js; or `core2d.ts`) and feeds it a `CoreInput` each render: state (derived in `useCoreState` from voice, chat streams, activity events, running missions and recent completions), speech energy, activity level (real events in the last 30 s), working agents, reduced motion and pointer position. Both renderers ease shared `STATE_PARAMS` and implement `boot()` (materialisation) and `pulse()` (a sent command). The quality tier sets particle counts, resolution and bloom; measured FPS degrades bloom, then resolution, then falls back to 2D.
 
 ### Live browser
 The server runs Chromium via Playwright. A viewer socket starts a CDP screencast (JPEG frames sized to the iPad viewport). Taps, drags and keys come back over the same socket. Every request from the page is checked by the SSRF guard. Popups become tabs; idle tabs are reclaimed.

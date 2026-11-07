@@ -3,9 +3,23 @@ import { api, errMsg } from '../lib/api';
 import { setState, toast, useStore, type Settings } from '../lib/store';
 import { ActionButton, Field, Panel, Seg } from '../components/ui';
 import { britishVoices, speakable, voice, voiceSupport } from '../voice/voice';
-import { sound, type SoundName } from '../audio/sound';
+import { SOUND_CATEGORY, SOUND_LABEL, sound, type SoundCategory, type SoundName } from '../audio/sound';
 import { dateTime } from '../lib/format';
 import { disconnect } from '../lib/events';
+
+const CATEGORY_LABEL: Record<SoundCategory, string> = {
+  interface: 'Interface (start-up, buttons, activation)',
+  notifications: 'Notifications',
+  missions: 'Missions (start, complete)',
+  alerts: 'Alerts (warnings, errors)',
+  ai: 'AI (listening, thinking, activation)',
+};
+
+const QUALITY_HELP: Record<Settings['graphicsQuality'], string> = {
+  cinematic: 'Cinematic: full resolution, 2,600 particles, bloom and glass panels. Best on a desktop or recent iPad; steps down automatically if the frame rate drops.',
+  balanced: 'Balanced: 1,600 particles, no bloom, 1.5× resolution. The default, tuned for an iPad (8th generation).',
+  performance: 'Performance: 30 fps cap, 650 particles, 1× resolution, minimal background animation and no section morphing.',
+};
 
 interface AuditRow { id: number; at: string; actor: string; action: string; target: string | null; outcome: string; detail: unknown }
 
@@ -44,7 +58,7 @@ export default function SettingsSection() {
           <div className="stack">
             <Field label="Claude model"><input className="input mono" list="models" defaultValue={settings.aiModel} onBlur={(e) => e.target.value !== settings.aiModel && void patch({ aiModel: e.target.value.trim() })} /></Field>
             <datalist id="models"><option value="claude-opus-5-5" /><option value="claude-sonnet-5-5" /><option value="claude-haiku-5-5" /><option value="claude-fable-5-1" /></datalist>
-            <Field label="Reasoning effort">
+            <Field label="Reasoning effort" group>
               <Seg value={settings.aiEffort} onChange={(v) => void patch({ aiEffort: v })} options={['low', 'medium', 'high', 'xhigh', 'max'].map((v) => ({ value: v as Settings['aiEffort'], label: v }))} />
             </Field>
             <label className="check"><input type="checkbox" checked={settings.aiWebSearch} onChange={(e) => void patch({ aiWebSearch: e.target.checked })} /><span className="small">Allow Anthropic server-side web search <span className="muted">(billed per search by Anthropic — this setting is your standing consent to that cost)</span></span></label>
@@ -73,21 +87,37 @@ export default function SettingsSection() {
         <Panel title="Sound" idx="04">
           <div className="stack">
             <label className="check"><input type="checkbox" checked={settings.soundEnabled} onChange={(e) => void patch({ soundEnabled: e.target.checked })} /><span className="small">Sound effects</span></label>
-            <Field label={`Volume ${Math.round(settings.soundVolume * 100)}%`}><input type="range" min={0} max={1} step={0.05} defaultValue={settings.soundVolume} onChange={(e) => void patch({ soundVolume: Number(e.target.value) })} /></Field>
-            <div className="row">
-              {(['startup', 'activate', 'listen', 'thinking', 'deploy', 'complete', 'warning', 'error', 'shutdown'] as SoundName[]).map((n) => (
-                <button key={n} className="btn sm" onClick={async () => { await sound.unlock(); sound.play(n); }}>{n}</button>
+            <Field label={`Master volume ${Math.round(settings.soundVolume * 100)}%`}><input type="range" min={0} max={1} step={0.05} defaultValue={settings.soundVolume} onChange={(e) => void patch({ soundVolume: Number(e.target.value) })} /></Field>
+            <div className="sound-cats">
+              {(Object.keys(CATEGORY_LABEL) as SoundCategory[]).map((c) => (
+                <div key={c} className="sound-cat">
+                  <label className="check"><input type="checkbox" checked={settings.soundCategories[c]} onChange={(e) => void patch({ soundCategories: { ...settings.soundCategories, [c]: e.target.checked } })} /><span className="small">{CATEGORY_LABEL[c]}</span></label>
+                  <div className="row" style={{ gap: 6 }}>
+                    {(Object.keys(SOUND_CATEGORY) as SoundName[]).filter((n) => SOUND_CATEGORY[n] === c).map((n) => (
+                      <button key={n} className="btn sm" title={`Preview: ${SOUND_LABEL[n]}`} onClick={async () => { await sound.unlock(); sound.play(n, { preview: true }); }}>{n}</button>
+                    ))}
+                  </div>
+                </div>
               ))}
             </div>
-            <div className="tiny muted">All sounds are synthesised live (Web Audio) — no recorded assets. They follow the iPad silent switch.</div>
+            <label className="check"><input type="checkbox" checked={settings.ambientSound} onChange={(e) => { void sound.unlock(); void patch({ ambientSound: e.target.checked }); }} /><span className="small">Ambient soundscape <span className="muted">(a quiet generative drone; fades in slowly, off by default)</span></span></label>
+            {settings.ambientSound && <Field label={`Ambient volume ${Math.round(settings.ambientVolume * 100)}%`}><input type="range" min={0} max={1} step={0.05} defaultValue={settings.ambientVolume} onChange={(e) => void patch({ ambientVolume: Number(e.target.value) })} /></Field>}
+            <div className="tiny muted">All sounds are synthesised live (Web Audio) — no recorded assets. Nothing plays before you tap INITIALISE, and they follow the iPad silent switch. Previews play even when a category is off.</div>
           </div>
         </Panel>
 
-        <Panel title="Visual core" idx="05">
+        <Panel title="Visual core & graphics" idx="05">
           <div className="stack">
-            <Seg value={settings.coreRenderMode} onChange={(v) => { try { localStorage.removeItem('tc.core.fallback2d'); } catch { /* ignore */ } void patch({ coreRenderMode: v }); }} options={[{ value: 'auto', label: 'Auto' }, { value: '3d', label: '3D' }, { value: '2d', label: '2D' }, { value: 'static', label: 'Static' }]} />
-            <label className="check"><input type="checkbox" checked={settings.batterySaver} onChange={(e) => void patch({ batterySaver: e.target.checked })} /><span className="small">Battery saver (30 fps cap, fewer particles, lower resolution)</span></label>
-            <div className="tiny muted">Auto uses 3D and drops to 2D automatically if the frame rate stays low. Choosing a mode here resets that decision.</div>
+            <Field label="Graphics quality" group>
+              <Seg value={settings.graphicsQuality} onChange={(v) => void patch({ graphicsQuality: v })} options={[{ value: 'cinematic', label: 'Cinematic' }, { value: 'balanced', label: 'Balanced' }, { value: 'performance', label: 'Performance' }]} />
+            </Field>
+            <div className="tiny muted">{QUALITY_HELP[settings.batterySaver ? 'performance' : settings.graphicsQuality]}</div>
+            <Field label="Core renderer" group>
+              <Seg value={settings.coreRenderMode} onChange={(v) => { try { localStorage.removeItem('tc.core.fallback2d'); } catch { /* ignore */ } void patch({ coreRenderMode: v }); }} options={[{ value: 'auto', label: 'Auto' }, { value: '3d', label: '3D' }, { value: '2d', label: '2D' }, { value: 'static', label: 'Static' }]} />
+            </Field>
+            <label className="check"><input type="checkbox" checked={settings.batterySaver} onChange={(e) => void patch({ batterySaver: e.target.checked })} /><span className="small">Battery saver (forces Performance quality: 30 fps cap, fewer particles, lower resolution)</span></label>
+            <label className="check"><input type="checkbox" checked={settings.bootSequence} onChange={(e) => void patch({ bootSequence: e.target.checked })} /><span className="small">Cinematic boot sequence <span className="muted">(skippable; never plays with reduced motion)</span></span></label>
+            <div className="tiny muted">Auto uses 3D and drops to 2D automatically if the frame rate stays low. Choosing a mode here resets that decision. Reduced motion (iPad Settings → Accessibility → Motion) is always respected.</div>
           </div>
         </Panel>
 

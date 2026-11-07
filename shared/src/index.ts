@@ -10,7 +10,8 @@ export const OWNER_NAME_DEFAULT = 'Keenan';
 // Agents
 // ---------------------------------------------------------------------------
 
-export const AGENT_IDS = ['core', 'spider', 'research', 'developer', 'operator', 'creative'] as const;
+// Order defines the agent numbers (01–07) and their positions around the core.
+export const AGENT_IDS = ['core', 'spider', 'research', 'developer', 'creative', 'security', 'operator'] as const;
 export type AgentId = (typeof AGENT_IDS)[number];
 
 export interface AgentInfo {
@@ -274,7 +275,8 @@ export type ServerEvent =
   | { type: 'integration.updated'; integration: IntegrationStatus }
   | { type: 'ui.command'; command: UiCommand }
   | { type: 'spider.file'; taskId: number; path: string }
-  | { type: 'system.status'; status: SystemStatus };
+  | { type: 'system.status'; status: SystemStatus }
+  | { type: 'telemetry'; sample: TelemetrySample };
 
 export type UiCommand =
   | { kind: 'open_url'; url: string; mode?: 'auto' | 'live' | 'reader' }
@@ -300,6 +302,42 @@ export interface SystemStatus {
   tasks: { active: number; awaitingApproval: number };
   memory: { count: number };
   db: { ok: boolean };
+}
+
+// ---------------------------------------------------------------------------
+// Telemetry (real measurements from the server host; null = unavailable here)
+// ---------------------------------------------------------------------------
+
+export interface TelemetrySample {
+  at: string;
+  cpu: { percent: number | null; cores: number; load1: number | null };
+  memory: { totalBytes: number; usedBytes: number; percent: number };
+  process: { rssBytes: number; heapUsedBytes: number; eventLoopLagMs: number | null };
+  network: { rxBytesPerSec: number | null; txBytesPerSec: number | null; source: string | null };
+  app: {
+    httpRequestsPerMin: number;
+    wsClients: number;
+    eventsPerMin: number;
+    aiTurnsPerMin: number;
+    toolCallsPerMin: number;
+    activeRuns: number;
+  };
+  storage: { dbBytes: number | null; memories: number };
+}
+
+export interface AIDiagnostics {
+  provider: string;
+  model: string;
+  state: IntegrationState;
+  effort: string;
+  lastLatencyMs: number | null;
+  lastFirstTokenMs: number | null;
+  lastError: string | null;
+  turnsSinceStart: number;
+  errorsSinceStart: number;
+  tokensToday: { input: number; output: number; cacheRead: number; webSearches: number };
+  activeRuns: number;
+  lastTurnAt: string | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -341,4 +379,6 @@ export const SECTION_LABELS: Record<SectionId, string> = {
 // Core visual states (client)
 // ---------------------------------------------------------------------------
 
-export type CoreState = 'idle' | 'listening' | 'thinking' | 'researching' | 'executing' | 'speaking' | 'error';
+export type CoreState = 'idle' | 'listening' | 'thinking' | 'researching' | 'executing' | 'speaking' | 'error' | 'success';
+
+export type GraphicsQuality = 'cinematic' | 'balanced' | 'performance';

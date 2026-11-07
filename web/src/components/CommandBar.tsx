@@ -8,11 +8,15 @@ import { Icon } from './icons';
 /** Text + push-to-talk voice command input. */
 export function CommandBar({ placeholder = 'Command TOURBILLION…' }: { placeholder?: string }) {
   const [text, setText] = useState('');
+  const [sent, setSent] = useState(0);
   const v = useStore((s) => s.voice);
 
   const submit = (value: string, spoken: boolean) => {
     if (!value.trim()) return;
     setText('');
+    // Visual acknowledgement: the bar flashes and the core receives a pulse.
+    setSent((n) => n + 1);
+    window.dispatchEvent(new CustomEvent('tc:command-sent'));
     void runCommand(value, { spoken });
   };
 
@@ -50,7 +54,7 @@ export function CommandBar({ placeholder = 'Command TOURBILLION…' }: { placeho
     <div>
       {v.interim && <div className="interim">“{v.interim}”</div>}
       <form
-        className="cmdbar"
+        className={`cmdbar ${sent ? `sent${sent % 2}` : ''} ${v.listening ? 'listening' : ''}`}
         onSubmit={(e) => {
           e.preventDefault();
           submit(text, false);
@@ -70,7 +74,7 @@ export function CommandBar({ placeholder = 'Command TOURBILLION…' }: { placeho
           aria-label="Command"
           data-testid="command-input"
         />
-        <button type="submit" className="btn primary icon" aria-label="Send" disabled={!text.trim()}>
+        <button type="submit" className="btn primary icon magnetic" aria-label="Send" disabled={!text.trim()}>
           <Icon name="send" size={20} />
         </button>
       </form>

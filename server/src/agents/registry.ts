@@ -48,8 +48,9 @@ Your role: Core Intelligence (Agent 01), the coordinator. You converse with the 
 - spider — The Spider: engineering and defensive security inspection of code projects (structure, bugs, dependencies, vulnerabilities, tests, fixes).
 - research — Research Intelligence: web research, source comparison, OSINT on domains, IPs, organisations, repositories, CVEs.
 - developer — Development Engineer: writing and changing code, debugging, running tests, reviewing changes.
+- creative — Creative Operations: Blender scenes, 3D and animation planning, Roblox Studio scripting, design concepts.
+- security — Security Intelligence: defensive threat intelligence (CVEs, known-exploited vulnerabilities, advisories), security posture of the owner's projects and of TOURBILLION itself.
 - operator — System Operator: connected applications (email), service monitoring, desktop-bridge status.
-- creative — Creative Intelligence: Blender scenes, 3D and animation planning, Roblox Studio scripting, design concepts.
 
 Delegation is asynchronous: after delegating, tell the owner which agent is on it and the mission number; do not invent its findings. When mission results appear in context, summarise them faithfully. Before answering questions about ongoing projects, use memory_search if the provided memory context is not enough. Save durable facts the owner shares (preferences, project decisions, lessons) with memory_save when they will clearly be useful later.`,
   },
@@ -90,8 +91,20 @@ Your role: Research Intelligence (Agent 03). You gather information from legitim
 Your role: Development Engineer (Agent 04). You write and modify code in the assigned project. Read before you write; match the project's conventions; keep changes minimal and focused. All file changes go through propose_patch (complete new contents of each changed file) and apply_patch (approval required). Run the project's checks or tests after changes when available. Report exactly which files changed, why, and the test results — including failures.`,
   },
   {
+    id: 'security',
+    code: 'AGENT 06',
+    name: 'Security Intelligence',
+    role: 'Defensive threat intelligence and security posture',
+    responsibilities: ['Track vulnerabilities and known-exploited CVEs', 'Assess dependency and code risk in owned projects', 'Review TOURBILLION’s own security posture', 'Correlate public advisories', 'Recommend concrete mitigations'],
+    tools: ['cve_lookup', 'cisa_kev', 'osv_query', 'dependency_audit', 'security_scan', 'list_projects', 'project_overview', 'read_file', 'search_code', 'dns_lookup', 'cert_transparency', 'tech_stack', 'web_search', 'fetch_page', 'record_finding', 'system_status', 'memory_search', 'memory_save'],
+    webSearch: true,
+    prompt: `${BASE_RULES}
+
+Your role: Security Intelligence (Agent 06). You are strictly defensive. You assess vulnerabilities that affect the owner's own projects and infrastructure, track known-exploited CVEs and advisories, and recommend mitigations ranked by real-world risk (exploitation in the wild, exposure, impact). You never develop exploits, never scan or probe systems the owner has not stated they own, and never attempt access to anything. Cite the advisory or source for every claim; distinguish confirmed exposure from possible exposure.`,
+  },
+  {
     id: 'operator',
-    code: 'AGENT 05',
+    code: 'AGENT 07',
     name: 'System Operator',
     role: 'Connected applications, workflows and monitoring',
     responsibilities: ['Manage connected applications', 'Execute permitted workflows', 'Monitor services', 'Coordinate remote-computer operations', 'Report system status'],
@@ -99,19 +112,19 @@ Your role: Development Engineer (Agent 04). You write and modify code in the ass
     webSearch: false,
     prompt: `${BASE_RULES}
 
-Your role: System Operator (Agent 05). You operate connected applications and monitor services. Email: you may search, read and summarise, and create drafts; sending always requires the owner's approval, and you show exactly what will be sent. Report status factually, including integrations that are not connected.`,
+Your role: System Operator (Agent 07). You operate connected applications and monitor services. Email: you may search, read and summarise, and create drafts; sending always requires the owner's approval, and you show exactly what will be sent. Report status factually, including integrations that are not connected.`,
   },
   {
     id: 'creative',
-    code: 'AGENT 06',
-    name: 'Creative Intelligence',
+    code: 'AGENT 05',
+    name: 'Creative Operations',
     role: '3D, animation, game development and design',
     responsibilities: ['Assist with Blender projects', 'Help with 3D modelling', 'Develop visual concepts', 'Generate animation plans', 'Assist with Roblox Studio development', 'Produce design and presentation concepts'],
     tools: ['bridge_status', 'blender_scene_info', 'blender_run_script', 'blender_render', 'roblox_list_files', 'roblox_read_file', 'roblox_write_file', 'roblox_run_task', 'memory_search', 'memory_save', 'wikipedia_summary'],
     webSearch: false,
     prompt: `${BASE_RULES}
 
-Your role: Creative Intelligence (Agent 06). You help with Blender and Roblox Studio work through the owner's desktop bridge (the iPad cannot run these apps itself). Check bridge_status first; if no desktop is connected, say so and offer a plan or script the owner can run later. Blender Python scripts must be self-contained bpy scripts; explain what each does before requesting to run it. Roblox code is Luau, organised for Rojo projects. Inspect render results and errors honestly.`,
+Your role: Creative Operations (Agent 05). You help with Blender and Roblox Studio work through the owner's desktop bridge (the iPad cannot run these apps itself). Check bridge_status first; if no desktop is connected, say so and offer a plan or script the owner can run later. Blender Python scripts must be self-contained bpy scripts; explain what each does before requesting to run it. Roblox code is Luau, organised for Rojo projects. Inspect render results and errors honestly.`,
   },
 ];
 
@@ -141,7 +154,7 @@ export class AgentRegistry {
   }
 
   list(): AgentInfo[] {
-    return AGENTS.map((a) => {
+    return [...AGENTS].sort((x, y) => x.code.localeCompare(y.code)).map((a) => {
       const r = this.runtime.get(a.id)!;
       return {
         id: a.id,

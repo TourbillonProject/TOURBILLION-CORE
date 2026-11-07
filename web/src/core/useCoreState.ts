@@ -4,7 +4,8 @@ import { useStore } from '../lib/store';
 
 /**
  * Derives the core's visual state from *real* system signals: local voice
- * state, live chat streams, recent agent activity events and running missions.
+ * state, live chat streams, recent agent activity events, running missions
+ * and mission completions (a short "success" state).
  */
 export function useCoreState(): CoreState {
   const voice = useStore((s) => s.voice);
@@ -12,6 +13,7 @@ export function useCoreState(): CoreState {
   const chat = useStore((s) => s.chat);
   const tasks = useStore((s) => s.tasks);
   const ws = useStore((s) => s.ws);
+  const successAt = useStore((s) => s.successAt);
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 700);
@@ -23,6 +25,8 @@ export function useCoreState(): CoreState {
   const recent = (ms: number, kinds: string[]) => activity.some((a) => now - a.at < ms && kinds.includes(a.kind));
   const lastError = [...activity].reverse().find((a) => a.kind === 'error');
   if ((lastError && now - lastError.at < 5000) || ws === 'offline') return 'error';
+  // A mission just completed: brief emerald expansion, then back to normal.
+  if (Date.now() - successAt < 2600) return 'success';
   const streaming = Object.values(chat).some((c) => !c.done);
   const latest = [...activity].reverse().find((a) => now - a.at < 4000);
   if (latest?.kind === 'research') return 'researching';

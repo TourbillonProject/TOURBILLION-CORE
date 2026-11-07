@@ -16,6 +16,7 @@ import { NetworkPolicyError } from './security/net.js';
 import { SecretStore } from './security/secrets.js';
 import { AuditLog, DEFAULT_SETTINGS, EventBus, Notifications, SettingsStore } from './services/core.js';
 import { IntegrationRegistry } from './services/integrations.js';
+import { Telemetry } from './services/telemetry.js';
 import { AIService } from './ai/service.js';
 import { ProviderError, ProviderNotConfiguredError } from './ai/types.js';
 import { MemoryService, SecretContentError } from './memory/service.js';
@@ -113,6 +114,11 @@ export async function buildApp(overrides: Partial<AppConfig> = {}, opts: { logge
   registerSelfAuthRoutes(app, ctx);
   const sockets = registerClientSocket(app, ctx);
   ctx.clientCount = sockets.count;
+  ctx.telemetry = new Telemetry(db, bus, config.dataDir, sockets.count);
+  ctx.ai.onTurn = () => ctx.telemetry.countAiTurn();
+  app.addHook('onResponse', async (req) => {
+    if (req.url.startsWith('/api/')) ctx.telemetry.countHttpRequest();
+  });
 
   // Owner-only API
   await app.register(async (secured) => {
@@ -149,6 +155,7 @@ export async function buildApp(overrides: Partial<AppConfig> = {}, opts: { logge
   ctx.tasks.recover();
   void ctx.browser.live.probe();
   ctx.automations.start();
+  ctx.telemetry.start();
   const statusTimer = setInterval(() => bus.emit({ type: 'system.status', status: systemStatus(ctx) }), 30_000);
   statusTimer.unref();
 
@@ -158,6 +165,7 @@ export async function buildApp(overrides: Partial<AppConfig> = {}, opts: { logge
     close: async () => {
       clearInterval(statusTimer);
       ctx.automations.stop();
+      ctx.telemetry.stop();
       await ctx.browser.live.closeAll();
       await app.close();
       db.close();

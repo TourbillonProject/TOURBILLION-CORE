@@ -1,3 +1,4 @@
+import type { SectionId } from '@tc/shared';
 import { useState } from 'react';
 import type { ApprovalRecord } from '@tc/shared';
 import { api, errMsg } from '../lib/api';
@@ -121,7 +122,17 @@ export function Toasts() {
   return (
     <div className="toasts" aria-live="polite">
       {toasts.map((t) => (
-        <div key={t.toastId} className={`toast ${t.level}`}>
+        <div
+          key={t.toastId}
+          className={`toast ${t.level} ${t.link ? 'clickable' : ''}`}
+          onClick={() => {
+            if (!t.link) return;
+            const [sec, param] = t.link.split('/');
+            navigate(sec as SectionId, param ?? null);
+            setState((s) => ({ toasts: s.toasts.filter((x) => x.toastId !== t.toastId) }));
+          }}
+        >
+          <span className="toast-bar" />
           <b>{t.title}</b>
           {t.body && <div className="small">{t.body}</div>}
         </div>

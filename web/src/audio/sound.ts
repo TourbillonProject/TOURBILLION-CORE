@@ -9,7 +9,41 @@
  * ringer/silent switch is respected.
  */
 
-export type SoundName = 'startup' | 'activate' | 'listen' | 'thinking' | 'deploy' | 'complete' | 'warning' | 'error' | 'shutdown' | 'tap';
+export type SoundName = 'startup' | 'activate' | 'listen' | 'thinking' | 'deploy' | 'complete' | 'warning' | 'error' | 'shutdown' | 'tap' | 'button' | 'notify' | 'ai';
+export type SoundCategory = 'interface' | 'notifications' | 'missions' | 'alerts' | 'ai';
+
+/** Which owner-controlled category each sound belongs to. */
+export const SOUND_CATEGORY: Record<SoundName, SoundCategory> = {
+  startup: 'interface',
+  shutdown: 'interface',
+  activate: 'interface',
+  tap: 'interface',
+  button: 'interface',
+  notify: 'notifications',
+  deploy: 'missions',
+  complete: 'missions',
+  warning: 'alerts',
+  error: 'alerts',
+  listen: 'ai',
+  thinking: 'ai',
+  ai: 'ai',
+};
+
+export const SOUND_LABEL: Record<SoundName, string> = {
+  startup: 'System start-up',
+  shutdown: 'Shutdown',
+  activate: 'Activation',
+  tap: 'Tap',
+  button: 'Button',
+  notify: 'Notification',
+  deploy: 'Mission start',
+  complete: 'Mission complete',
+  warning: 'Warning',
+  error: 'Error',
+  listen: 'Listening',
+  thinking: 'Thinking',
+  ai: 'AI activation',
+};
 
 const D = 146.83; // D3
 const ratio = (semitones: number) => 2 ** (semitones / 12);
@@ -20,12 +54,29 @@ class SoundEngine {
   private wet: GainNode | null = null;
   private enabled = true;
   private volume = 0.6;
+  private categories: Record<SoundCategory, boolean> = { interface: true, notifications: true, missions: true, alerts: true, ai: true };
   private last = new Map<SoundName, number>();
+  private ambientWanted = false;
+  private ambientVolume = 0.25;
+  private ambient: { gain: GainNode; nodes: AudioScheduledSourceNode[]; timer: number } | null = null;
 
-  configure(enabled: boolean, volume: number) {
+  configure(enabled: boolean, volume: number, categories?: Partial<Record<SoundCategory, boolean>>) {
     this.enabled = enabled;
     this.volume = volume;
+    if (categories) this.categories = { ...this.categories, ...categories };
     if (this.master) this.master.gain.value = volume * 0.5;
+    this.syncAmbient();
+  }
+
+  /** Optional generative ambience. Starts silent and fades in slowly; never plays before audio is unlocked. */
+  setAmbient(enabled: boolean, volume: number) {
+    this.ambientWanted = enabled;
+    this.ambientVolume = volume;
+    this.syncAmbient();
+  }
+
+  get ambientPlaying() {
+    return !!this.ambient;
   }
 
   get unlocked() {
@@ -64,6 +115,70 @@ class SoundEngine {
     s.buffer = b;
     s.connect(this.ctx.destination);
     s.start(0);
+    this.syncAmbient();
+  }
+
+  private syncAmbient() {
+    const want = this.ambientWanted && this.enabled && this.unlocked;
+    if (want && !this.ambient) this.startAmbient();
+    else if (!want && this.ambient) this.stopAmbient();
+    else if (this.ambient && this.ctx) this.ambient.gain.gain.setTargetAtTime(this.ambientLevel(), this.ctx.currentTime, 0.8);
+  }
+
+  private ambientLevel() {
+    return Math.min(1, Math.max(0, this.ambientVolume)) * 0.09;
+  }
+
+  /** A low D/A drone through a slowly breathing filter, with an occasional distant bell. */
+  private startAmbient() {
+    const ctx = this.ctx!;
+    const t = ctx.currentTime;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.0001, t);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, this.ambientLevel()), t + 5);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 420;
+    lp.Q.value = 0.7;
+    const lfo = ctx.createOscillator();
+    const lfoGain = ctx.createGain();
+    lfo.frequency.value = 0.045;
+    lfoGain.gain.value = 180;
+    lfo.connect(lfoGain).connect(lp.frequency);
+    lp.connect(gain);
+    gain.connect(this.master!);
+    gain.connect(this.wet!);
+    const nodes: AudioScheduledSourceNode[] = [lfo];
+    for (const [f, type, g] of [[D / 2, 'sine', 0.5], [(D / 2) * 1.0035, 'sine', 0.45], [(D / 2) * ratio(7), 'triangle', 0.18], [D, 'sine', 0.12]] as const) {
+      const o = ctx.createOscillator();
+      const og = ctx.createGain();
+      o.type = type;
+      o.frequency.value = f;
+      og.gain.value = g;
+      o.connect(og).connect(lp);
+      o.start(t);
+      nodes.push(o);
+    }
+    lfo.start(t);
+    const pent = [0, 3, 5, 7, 10, 12, 15];
+    const chime = () => {
+      if (!this.ambient || !this.ctx) return;
+      const s = pent[Math.floor(Math.random() * pent.length)];
+      this.bell(D * 4 * ratio(s), this.ctx.currentTime + 0.05, 3.2, this.ambientLevel() * 0.5, Math.random() * 1.2 - 0.6, 0.9);
+      this.ambient.timer = window.setTimeout(chime, 9000 + Math.random() * 9000);
+    };
+    this.ambient = { gain, nodes, timer: window.setTimeout(chime, 6000) };
+  }
+
+  private stopAmbient() {
+    const a = this.ambient!;
+    this.ambient = null;
+    clearTimeout(a.timer);
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime;
+    a.gain.gain.cancelScheduledValues(t);
+    a.gain.gain.setTargetAtTime(0.0001, t, 0.5);
+    for (const n of a.nodes) n.stop(t + 2.5);
   }
 
   private impulse(seconds: number, decay: number): AudioBuffer {
@@ -173,8 +288,10 @@ class SoundEngine {
     src.start(t);
   }
 
-  play(name: SoundName) {
+  /** Plays a sound if sound is enabled, its category is on, and audio has been unlocked by a gesture. */
+  play(name: SoundName, opts: { preview?: boolean } = {}) {
     if (!this.enabled || !this.ctx || this.ctx.state !== 'running') return;
+    if (!opts.preview && !this.categories[SOUND_CATEGORY[name]]) return;
     const nowMs = performance.now();
     if (nowMs - (this.last.get(name) ?? 0) < 250) return; // debounce bursts
     this.last.set(name, nowMs);
@@ -220,6 +337,18 @@ class SoundEngine {
         break;
       case 'tap':
         this.tick(t, 5200, 0.04, 0.025);
+        break;
+      case 'button':
+        this.tick(t, 3800, 0.05, 0.02);
+        this.bell(D * 8 * ratio(7), t + 0.012, 0.18, 0.03, 0, 0.8);
+        break;
+      case 'notify':
+        this.bell(D * 4 * ratio(12), t, 0.9, 0.08, -0.15, 1.1);
+        this.bell(D * 4 * ratio(19), t + 0.12, 1.1, 0.07, 0.15, 1.1);
+        break;
+      case 'ai':
+        this.sweep(t, 900, 5200, 0.6, 0.035);
+        [0, 5, 7, 12].forEach((s, i) => this.bell(D * 4 * ratio(s), t + 0.08 + i * 0.06, 0.9, 0.06, (i - 1.5) * 0.3, 2.0));
         break;
     }
   }

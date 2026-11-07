@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { flushSync } from 'react-dom';
 import type {
   ActivityKind,
   AgentId,
@@ -10,6 +11,8 @@ import type {
   SystemStatus,
   TaskRecord,
   TaskStep,
+  TelemetrySample,
+  GraphicsQuality,
 } from '@tc/shared';
 
 /**
@@ -32,6 +35,25 @@ export interface Settings {
   coreRenderMode: 'auto' | '3d' | '2d' | 'static';
   batterySaver: boolean;
   speakResponses: boolean;
+  graphicsQuality: GraphicsQuality;
+  soundCategories: SoundCategories;
+  ambientSound: boolean;
+  ambientVolume: number;
+  bootSequence: boolean;
+}
+
+export interface SoundCategories {
+  interface: boolean;
+  notifications: boolean;
+  missions: boolean;
+  alerts: boolean;
+  ai: boolean;
+}
+
+export interface TelemetryMeta {
+  intervalMs: number;
+  host: { platform: string; cpuModel: string; cores: number; node: string };
+  capabilities: { network: boolean; eventLoop: boolean };
 }
 
 export interface ActivityEntry {
@@ -75,6 +97,15 @@ export interface State {
   commandConversationId: number | null;
   /** Command for the Browser section; kept until the section mounts and consumes it. */
   browserCommand: (BrowserCommand & { nonce: number }) | null;
+  /** Real server measurements (2 s samples, newest last). */
+  telemetry: TelemetrySample[];
+  telemetryMeta: TelemetryMeta | null;
+  /** Round-trip time of the realtime link, measured with ping/pong (ms, newest last). */
+  link: { latencyMs: number | null; history: number[] };
+  /** performance.now() when the cinematic boot sequence started; null when not playing. */
+  bootSeq: number | null;
+  /** Time (Date.now()) of the latest mission completion — drives the core's success state. */
+  successAt: number;
 }
 
 export type BrowserCommand = { kind: 'open_url'; url: string; mode?: 'auto' | 'live' | 'reader' } | { kind: 'open_youtube'; query?: string; videoId?: string };
@@ -103,6 +134,11 @@ const initial: State = {
   reply: null,
   commandConversationId: null,
   browserCommand: null,
+  telemetry: [],
+  telemetryMeta: null,
+  link: { latencyMs: null, history: [] },
+  bootSeq: null,
+  successAt: 0,
 };
 
 let state: State = initial;
@@ -142,7 +178,22 @@ export function emptyArray<T>(): T[] {
 export function navigate(section: SectionId, param: string | null = null) {
   const hash = `#/${section}${param ? `/${encodeURIComponent(param)}` : ''}`;
   if (location.hash !== hash) history.pushState(null, '', hash);
-  setState({ section, sectionParam: param });
+  const apply = () => setState({ section, sectionParam: param });
+  // Section changes morph with a short View Transition where supported (not in performance mode or with reduced motion).
+  const doc = typeof document === 'undefined' ? null : (document as Document & { startViewTransition?: (cb: () => void) => { finished: Promise<void> } });
+  if (doc?.startViewTransition && section !== state.section && doc.documentElement.dataset.motion === 'full') {
+    const root = doc.documentElement;
+    try {
+      // The transition name is only present while morphing (it would otherwise make .content a containing block).
+      root.classList.add('vt');
+      const vt = doc.startViewTransition(() => flushSync(apply));
+      void vt.finished.finally(() => root.classList.remove('vt'));
+      return;
+    } catch {
+      root.classList.remove('vt');
+    }
+  }
+  apply();
 }
 
 export function readHash(valid: readonly string[]): { section: SectionId; param: string | null } {
@@ -154,8 +205,8 @@ export function readHash(valid: readonly string[]): { section: SectionId; param:
 // ---- helpers ------------------------------------------------------------------
 
 let toastSeq = 0;
-export function toast(level: NotificationRecord['level'], title: string, body = '') {
-  const t = { id: -1, level, title, body, link: null, read: false, createdAt: new Date().toISOString(), toastId: ++toastSeq };
+export function toast(level: NotificationRecord['level'], title: string, body = '', link: string | null = null) {
+  const t = { id: -1, level, title, body, link, read: false, createdAt: new Date().toISOString(), toastId: ++toastSeq };
   setState((s) => ({ toasts: [...s.toasts.slice(-3), t] }));
   setTimeout(() => setState((s) => ({ toasts: s.toasts.filter((x) => x.toastId !== t.toastId) })), level === 'error' ? 8000 : 5000);
 }

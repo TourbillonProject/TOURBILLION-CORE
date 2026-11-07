@@ -1,10 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import type { IntegrationState, TaskStatus } from '@tc/shared';
 import { Icon } from './icons';
 
 export function Panel({ title, idx, actions, children, className = '', flat = false }: { title?: ReactNode; idx?: string; actions?: ReactNode; children: ReactNode; className?: string; flat?: boolean }) {
   return (
     <section className={`panel ${flat ? 'flat' : ''} ${className}`}>
+      <span className="panel-edge" aria-hidden="true" />
       {(title || actions) && (
         <div className="panel-head">
           {idx && <span className="idx">{idx}</span>}
@@ -58,7 +60,8 @@ export function Sheet({ title, onClose, children, wide }: { title: ReactNode; on
     window.addEventListener('keydown', k);
     return () => window.removeEventListener('keydown', k);
   }, [onClose]);
-  return (
+  // Portalled to <body>: transformed or glass (backdrop-filter) ancestors would otherwise trap a fixed overlay.
+  return createPortal(
     <div className="scrim" onClick={onClose} role="dialog" aria-modal="true">
       <div className="sheet" style={wide ? { width: 'min(1000px, 100%)' } : undefined} onClick={(e) => e.stopPropagation()}>
         <div className="row between nowrap" style={{ marginBottom: 8 }}>
@@ -69,7 +72,8 @@ export function Sheet({ title, onClose, children, wide }: { title: ReactNode; on
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -85,7 +89,16 @@ export function Seg<T extends string>({ value, options, onChange }: { value: T; 
   );
 }
 
-export function Field({ label, children }: { label: string; children: ReactNode }) {
+/** Labelled form field. `group` is for button sets (a <label> would rename its first button). */
+export function Field({ label, children, group }: { label: string; children: ReactNode; group?: boolean }) {
+  if (group) {
+    return (
+      <div className="field" role="group" aria-label={label}>
+        <span>{label}</span>
+        {children}
+      </div>
+    );
+  }
   return (
     <label className="field">
       <span>{label}</span>

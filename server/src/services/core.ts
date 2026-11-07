@@ -87,6 +87,11 @@ export interface Settings {
   coreRenderMode: 'auto' | '3d' | '2d' | 'static';
   batterySaver: boolean;
   speakResponses: boolean;
+  graphicsQuality: 'cinematic' | 'balanced' | 'performance';
+  soundCategories: { interface: boolean; notifications: boolean; missions: boolean; alerts: boolean; ai: boolean };
+  ambientSound: boolean;
+  ambientVolume: number;
+  bootSequence: boolean;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -104,6 +109,11 @@ export const DEFAULT_SETTINGS: Settings = {
   coreRenderMode: 'auto',
   batterySaver: false,
   speakResponses: true,
+  graphicsQuality: 'balanced',
+  soundCategories: { interface: true, notifications: true, missions: true, alerts: true, ai: true },
+  ambientSound: false,
+  ambientVolume: 0.25,
+  bootSequence: true,
 };
 
 export class SettingsStore {

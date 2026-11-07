@@ -52,3 +52,15 @@ The system has exactly one user. A one-time setup code on the server console pre
 
 ### D17. Test against doubles where the network is closed, real software where possible
 The development environment could not reach public APIs and had no Anthropic key. Tests use protocol-accurate doubles for those, and real software for everything available (Chromium, Blender via bpy, npm, git). The testing report states exactly which is which.
+
+### D18. Command Center evolution without new runtime dependencies
+Charts, gauges, topology, timelines and all motion are SVG, Canvas 2D, CSS and the Web Animations/View Transitions APIs; the 3D core stays plain Three.js, with its bundled post-processing used only for the Cinematic tier's bloom (loaded on demand). No GSAP, Framer Motion or chart library: they would add weight to an A12 iPad's first paint for effects CSS already composites on the GPU.
+
+### D19. Honest telemetry and progress
+Metrics come from the server host or are `null` and labelled ("n/a", "not measurable on this host"). Mission progress is tool results against planned steps, capped below 100 % until the mission ends; without a plan the bar is indeterminate. Agent cards animate only on the server's `agent.status`. Decorative effects (radar contacts, data fragments, ambient glyphs) are never presented as data.
+
+### D20. Three graphics tiers, default Balanced
+Cinematic (bloom, 2× resolution, glass panels with backdrop blur, 2,600 particles), Balanced (1.5×, 1,600 particles, no blur — the iPad default), Performance (1×, 30 fps cap, 650 particles, static background, no section morphing). Glass is Cinematic-only because backdrop blur over a live WebGL canvas is the most expensive effect on the A12.
+
+### D21. Boot sequence after the INITIALISE tap
+iPadOS only unlocks audio and speech inside a user gesture, so the gate stays; the cinematic sequence plays after it, synchronised with the start-up sound, never blocks input, can be skipped, is off with reduced motion and can be disabled in Settings.

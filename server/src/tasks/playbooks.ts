@@ -284,4 +284,75 @@ const blenderPreview: Playbook<z.ZodObject<{ blendFile: z.ZodString; render: z.Z
   },
 };
 
-export const PLAYBOOKS = [spiderInspect, researchOsint, diagnostics, healthCheck, gmailDigest, blenderPreview] as unknown as Playbook[];
+const securityPosture: Playbook<z.ZodObject<{ days: z.ZodDefault<z.ZodNumber> }>> = {
+  id: 'security.posture',
+  title: 'Security posture review',
+  agent: 'security',
+  description: 'Reviews TOURBILLION’s own configuration, sessions, approvals and audit log for security weaknesses and suspicious activity.',
+  params: z.object({ days: z.number().int().min(1).max(90).default(7) }),
+  plan: (p) => ({
+    interpretation: `Review TOURBILLION’s configuration and the last ${p.days} day(s) of audit activity.`,
+    steps: [{ title: 'Configuration hardening', risk: 'read' }, { title: 'Sessions and sign-in activity', risk: 'read' }, { title: 'Approvals and agent actions', risk: 'read' }, { title: 'Integrations', risk: 'read' }],
+    requiredPermissions: [],
+    successCriteria: ['Every check reported a result'],
+  }),
+  run: async (pc) => {
+    const ctx = pc.ctx;
+    const since = new Date(Date.now() - pc.params.days * 86_400_000).toISOString();
+    type F = { severity: 'high' | 'medium' | 'low' | 'ok'; area: string; finding: string; recommendation?: string };
+    const out: F[] = [];
+    const add = (f: F) => out.push(f);
+    pc.step('Checking configuration hardening…');
+    const cfg = ctx.config;
+    if (cfg.allowPrivateNetwork) add({ severity: 'high', area: 'Network', finding: 'TC_ALLOW_PRIVATE_NETWORK is enabled: the SSRF guard is off for agents and the remote browser.', recommendation: 'Disable it unless the server is isolated.' });
+    else add({ severity: 'ok', area: 'Network', finding: 'SSRF guard active (private/internal addresses blocked).' });
+    if (!cfg.publicUrl) add({ severity: 'medium', area: 'Transport', finding: 'TC_PUBLIC_URL is not set; HTTPS origin cannot be verified.', recommendation: 'Serve over HTTPS and set TC_PUBLIC_URL.' });
+    else if (!cfg.publicUrl.startsWith('https://')) add({ severity: 'high', area: 'Transport', finding: `Public URL is not HTTPS (${cfg.publicUrl}).`, recommendation: 'Use HTTPS (Tailscale Serve, Caddy, or a tunnel).' });
+    else add({ severity: 'ok', area: 'Transport', finding: `Public URL uses HTTPS (${cfg.publicUrl}).` });
+    add(cfg.masterKey ? { severity: 'ok', area: 'Secrets', finding: 'Credential encryption key supplied via TC_MASTER_KEY.' } : { severity: 'low', area: 'Secrets', finding: 'Credential encryption key is stored in the data directory (master.key).', recommendation: 'Back it up separately from the database, or provide TC_MASTER_KEY.' });
+    if (cfg.authRateLimitPerMinute > 20) add({ severity: 'medium', area: 'Sign-in', finding: `Sign-in rate limit is high (${cfg.authRateLimitPerMinute}/min).`, recommendation: 'Keep it at 10/min or lower.' });
+    if (cfg.anthropic.apiKey) add({ severity: 'low', area: 'Secrets', finding: 'Anthropic key supplied via environment variable (visible to anything that can read the process environment).', recommendation: 'Prefer storing it encrypted through Connected Apps.' });
+
+    pc.step('Reviewing sessions and sign-in activity…');
+    const sessions = ctx.db.all<{ ip: string; user_agent: string; last_seen_at: string }>('SELECT ip, user_agent, last_seen_at FROM sessions');
+    const ips = [...new Set(sessions.map((s) => s.ip))];
+    add({ severity: sessions.length > 5 ? 'low' : 'ok', area: 'Sessions', finding: `${sessions.length} active session(s) from ${ips.length} address(es): ${ips.join(', ') || 'none'}.`, recommendation: sessions.length > 5 ? 'Sign out devices you no longer use (Settings → Security).' : undefined });
+    const failed = ctx.db.all<{ detail: string | null }>("SELECT detail FROM audit_log WHERE action IN ('auth.login','auth.setup') AND outcome = 'denied' AND at >= ?", since);
+    const failedIps = new Map<string, number>();
+    for (const f of failed) {
+      const ip = (() => { try { return (JSON.parse(f.detail ?? '{}') as { ip?: string }).ip ?? 'unknown'; } catch { return 'unknown'; } })();
+      failedIps.set(ip, (failedIps.get(ip) ?? 0) + 1);
+    }
+    if (failed.length) add({ severity: failed.length >= 10 ? 'high' : 'medium', area: 'Sign-in', finding: `${failed.length} failed sign-in/setup attempt(s): ${[...failedIps].map(([ip, n]) => `${ip} ×${n}`).join(', ')}.`, recommendation: 'If these are not yours, restrict access (Tailscale / Cloudflare Access) and change the passphrase.' });
+    else add({ severity: 'ok', area: 'Sign-in', finding: 'No failed sign-in attempts in the period.' });
+
+    pc.step('Reviewing approvals and agent actions…');
+    const s = ctx.settings.all();
+    if (s.autoApproveWrites) add({ severity: 'low', area: 'Approvals', finding: 'Low-risk writes are auto-approved (memories, drafts, proposed patches).', recommendation: 'Turn off in Settings → Intelligence if you want to review every write.' });
+    const stale = ctx.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM approvals WHERE status = 'pending' AND created_at < ?", new Date(Date.now() - 86_400_000).toISOString())?.n ?? 0;
+    if (stale) add({ severity: 'low', area: 'Approvals', finding: `${stale} approval(s) pending for over 24 hours.`, recommendation: 'Decide or cancel the missions waiting on them.' });
+    const decided = ctx.db.all<{ outcome: string; n: number }>("SELECT outcome, COUNT(*) AS n FROM audit_log WHERE action IN ('approval.approved','approval.denied') AND at >= ? GROUP BY outcome", since);
+    add({ severity: 'ok', area: 'Approvals', finding: `Decisions in the period: ${decided.map((d) => `${d.n} ${d.outcome === 'ok' ? 'approved' : 'denied'}`).join(', ') || 'none'}.` });
+    const toolErrors = ctx.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM audit_log WHERE action LIKE 'tool.%' AND outcome = 'error' AND at >= ?", since)?.n ?? 0;
+    const toolRuns = ctx.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM audit_log WHERE action LIKE 'tool.%' AND at >= ?", since)?.n ?? 0;
+    add({ severity: toolErrors > 20 ? 'low' : 'ok', area: 'Agents', finding: `${toolRuns} tool execution(s), ${toolErrors} failed.` });
+
+    pc.step('Checking integrations…');
+    for (const i of ctx.integrations.list()) {
+      if (i.state === 'error') add({ severity: 'low', area: 'Integrations', finding: `${i.name} reports an error: ${i.lastError ?? 'unknown'}.`, recommendation: 'Re-test or reconnect it in Connected Apps.' });
+    }
+    const bridges = ctx.bridge.listPaired();
+    if (bridges.length) add({ severity: 'ok', area: 'Desktop bridge', finding: `${bridges.length} paired computer(s): ${bridges.map((b) => `${b.name}${b.connected ? ' (online)' : ''}`).join(', ')}.`, recommendation: 'Revoke computers you no longer use.' });
+
+    const counts = { high: out.filter((f) => f.severity === 'high').length, medium: out.filter((f) => f.severity === 'medium').length, low: out.filter((f) => f.severity === 'low').length };
+    pc.artifact('security_posture', 'Security posture', { findings: out, since });
+    const order = { high: 0, medium: 1, low: 2, ok: 3 } as const;
+    const lines = [...out].sort((a, b) => order[a.severity] - order[b.severity]).map((f) => `- **${f.severity.toUpperCase()}** · ${f.area}: ${f.finding}${f.recommendation ? ` — _${f.recommendation}_` : ''}`);
+    return {
+      report: `## Security posture review (last ${pc.params.days} day(s))\n\n${counts.high} high · ${counts.medium} medium · ${counts.low} low\n\n${lines.join('\n')}`,
+      verification: { outcome: 'succeeded', summary: `${out.length} checks: ${counts.high} high, ${counts.medium} medium, ${counts.low} low.`, evidence: ['configuration', 'sessions table', 'audit log', 'approvals', 'integration states'], unverified: ['Host-level hardening (OS, firewall, reverse proxy) is outside this review'] },
+    };
+  },
+};
+
+export const PLAYBOOKS = [spiderInspect, researchOsint, diagnostics, healthCheck, gmailDigest, blenderPreview, securityPosture] as unknown as Playbook[];

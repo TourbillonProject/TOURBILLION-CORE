@@ -7,9 +7,9 @@ Date of this report: 2026-11-07. All numbers below come from runs in the develop
 | Suite | Command | Result |
 |---|---|---|
 | Type checking (shared, server, web, bridge) | `npm run typecheck` | **pass** |
-| Server integration tests (Vitest) | `npm test -w server` | **56 / 56 pass** (with `TC_TEST_BPY_PYTHON` set; 55 + 1 skipped without it) |
+| Server integration tests (Vitest) | `npm test -w server` | **62 / 62 pass** (with `TC_TEST_BPY_PYTHON` set; 61 + 1 skipped without it) |
 | Web unit tests (command intents) | `npm test -w web` | **7 / 7 pass** |
-| End-to-end, iPad landscape + portrait (Playwright, Chromium) | `npm run test:e2e` | **13 / 13 pass** |
+| End-to-end, iPad landscape + portrait (Playwright, Chromium) | `npm run test:e2e` | **17 / 17 pass** |
 | Production build | `npm run build && npm start` | **pass** — PWA, deep links and API served; service worker served `no-cache` |
 | Docker image | `docker build .` | **not run** — no Docker daemon in the development environment |
 
@@ -66,6 +66,15 @@ Final run: 16 leads (0 critical, 6 high, 3 medium, 6 low, 1 info). All reviewed:
 - *Raw HTML sink* in the reader view: content is Readability output re-sanitised with DOMPurify (no scripts, styles, forms, frames) under a strict CSP.
 - Low/info: fake keys and intentionally vulnerable snippets inside test fixtures.
 
+## Command Center evolution (telemetry, 3D core, motion) — what was verified
+
+- **Telemetry is measured, not simulated** (`server/test/telemetry-security.test.ts`): host cores and total memory match `os`, memory percentage is in range, RSS and database size are real, HTTP and AI-turn counters move after real requests, network counters exist only where `/proc/net/dev` exists (otherwise `null`, and the UI says "not measurable on this host"), history is bounded at 180 samples.
+- **AI diagnostics** record latency, first-token time and token usage from an actual (double-served) turn.
+- **Seven agents** are listed 01–07 in order; Security Intelligence (06) runs a real posture review of TOURBILLION's own configuration and audit log, flagging the test configuration's private-network access as high risk and counting a real failed sign-in.
+- **End-to-end** (`e2e/app.spec.ts`): the boot sequence plays after INITIALISE and can be skipped; the CPU gauge and the performance chart render from live samples; the link chip shows a measured round-trip time; seven agent cards show the actual idle status and expand to real responsibilities/tools; tapping the core opens AI diagnostics (provider, model, renderer engine); an integration opens its diagnostics; a completed mission opens its execution history with the verification result; the Performance quality tier reaches the core and the document; 1440×900, 1280×800 and 390×844 have no horizontal scrolling (plus the iPad landscape/portrait checks).
+- **Visual review** with screenshots at 1440×900, iPad landscape/portrait and iPhone size: boot gate, materialisation, hero, every band below it, the diagnostics sheet, a mission completing (agent 06 lights, core enters "Complete" with an emerald wave), Cinematic vs Performance tiers and the 2D renderer. No console errors or warnings in any run.
+- **Not measurable here:** real frame rate on the A12 iPad. The container renders WebGL in software (SwiftShader, ~6 fps), which is exactly the case the adaptive logic handles: bloom is dropped first, then resolution, then the core falls back to 2D. Check *AI diagnostics → Core renderer* on the iPad: Balanced should hold 45+ fps; if not, choose Performance.
+
 ## Owner verification checklist (needs your hardware and accounts)
 
 1. On the iPad in Safari: sign in, tap INITIALISE, hear the greeting; add to Home Screen; relaunch offline and confirm the shell opens.
@@ -75,6 +84,7 @@ Final run: 16 leads (0 critical, 6 high, 3 medium, 6 low, 1 info). All reviewed:
 5. Research: run a domain report on a domain you own; check sources and timestamps.
 6. Pair your Mac/PC bridge; run "Blender: inspect and preview" on a real `.blend` file.
 7. Connect Gmail; ask the Operator to draft a reply; approve or deny the send.
+8. Command Center on the iPad: watch the boot sequence, tap the core and read *Frame rate* in AI diagnostics for each graphics tier (Settings → Visual core & graphics); enable the ambient soundscape and confirm it fades in quietly.
 
 ## Running the tests
 

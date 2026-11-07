@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import type { SystemStatus } from '@tc/shared';
+import type { AIDiagnostics, SystemStatus } from '@tc/shared';
 import type { Ctx } from '../context.js';
 import { APP_VERSION } from '../config.js';
 import { maskSecret } from '../security/crypto.js';
@@ -22,6 +22,11 @@ const settingsPatch = z
     coreRenderMode: z.enum(['auto', '3d', '2d', 'static']),
     batterySaver: z.boolean(),
     speakResponses: z.boolean(),
+    graphicsQuality: z.enum(['cinematic', 'balanced', 'performance']),
+    soundCategories: z.object({ interface: z.boolean(), notifications: z.boolean(), missions: z.boolean(), alerts: z.boolean(), ai: z.boolean() }),
+    ambientSound: z.boolean(),
+    ambientVolume: z.number().min(0).max(1),
+    bootSequence: z.boolean(),
   })
   .partial();
 
@@ -47,6 +52,33 @@ export function systemStatus(ctx: Ctx): SystemStatus {
 
 export function registerSystemRoutes(app: FastifyInstance, ctx: Ctx) {
   app.get('/api/system/status', async () => systemStatus(ctx));
+  app.get('/api/system/telemetry', async () => ctx.telemetry.snapshot());
+
+  app.get('/api/ai/diagnostics', async (): Promise<AIDiagnostics> => {
+    const today = new Date();
+    today.setUTCHours(0, 0, 0, 0);
+    const t = ctx.db.get<{ i: number | null; o: number | null; c: number | null; w: number | null }>(
+      `SELECT SUM(json_extract(usage, '$.inputTokens')) AS i, SUM(json_extract(usage, '$.outputTokens')) AS o,
+              SUM(json_extract(usage, '$.cacheReadTokens')) AS c, SUM(json_extract(usage, '$.webSearches')) AS w
+       FROM runs WHERE updated_at >= ?`,
+      today.toISOString(),
+    );
+    const claude = ctx.integrations.status('claude');
+    return {
+      provider: 'Anthropic Claude',
+      model: ctx.ai.model(),
+      state: claude.state,
+      effort: ctx.settings.get('aiEffort'),
+      lastLatencyMs: ctx.ai.stats.lastLatencyMs,
+      lastFirstTokenMs: ctx.ai.stats.lastFirstTokenMs,
+      lastError: ctx.ai.stats.lastError ?? claude.lastError,
+      turnsSinceStart: ctx.ai.stats.turns,
+      errorsSinceStart: ctx.ai.stats.errors,
+      tokensToday: { input: t?.i ?? 0, output: t?.o ?? 0, cacheRead: t?.c ?? 0, webSearches: t?.w ?? 0 },
+      activeRuns: ctx.db.get<{ n: number }>("SELECT COUNT(*) AS n FROM runs WHERE status = 'running'")?.n ?? 0,
+      lastTurnAt: ctx.ai.stats.lastTurnAt,
+    };
+  });
 
   app.get('/api/settings', async () => ctx.settings.all());
   app.patch('/api/settings', async (req) => {

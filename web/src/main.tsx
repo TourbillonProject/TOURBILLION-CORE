@@ -4,6 +4,9 @@ import '@fontsource-variable/oxanium';
 import '@fontsource-variable/jetbrains-mono';
 import './styles/app.css';
 import { App } from './App';
+import { installMotion } from './lib/motion';
+
+installMotion();
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

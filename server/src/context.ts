@@ -20,6 +20,7 @@ import type { GmailService } from './integrations/gmail.js';
 import type { BridgeHub } from './integrations/bridge.js';
 import type { AutomationService } from './automations/service.js';
 import type { PatchService } from './spider/patches.js';
+import type { Telemetry } from './services/telemetry.js';
 
 /** Service container handed to every route module. */
 export interface Ctx {
@@ -49,5 +50,6 @@ export interface Ctx {
   bridge: BridgeHub;
   automations: AutomationService;
   clientCount: () => number;
+  telemetry: Telemetry;
   startedAt: number;
 }

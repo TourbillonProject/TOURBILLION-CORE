@@ -17,6 +17,9 @@ export class AIService {
   private activeId = 'anthropic';
   /** Test hook: replace the provider (never exposed over HTTP). */
   override: AIProvider | null = null;
+  /** Real per-process measurements for the AI diagnostics view. */
+  readonly stats = { turns: 0, errors: 0, lastLatencyMs: null as number | null, lastFirstTokenMs: null as number | null, lastError: null as string | null, lastTurnAt: null as string | null };
+  onTurn: (() => void) | null = null;
 
   constructor(
     private config: AppConfig,
@@ -81,11 +84,37 @@ export class AIService {
   async turn(req: TurnRequest): Promise<TurnResult> {
     const provider = this.provider();
     if (!provider.isConfigured()) throw new ProviderNotConfiguredError();
+    const started = Date.now();
+    let firstToken: number | null = null;
+    const mark = () => {
+      if (firstToken === null) firstToken = Date.now() - started;
+    };
     try {
-      const result = await provider.streamTurn({ effort: this.settings.get('aiEffort'), ...req }, this.model());
+      const result = await provider.streamTurn(
+        {
+          effort: this.settings.get('aiEffort'),
+          ...req,
+          onText: (d) => {
+            mark();
+            req.onText?.(d);
+          },
+          onThinking: (d) => {
+            mark();
+            req.onThinking?.(d);
+          },
+        },
+        this.model(),
+      );
+      this.stats.turns += 1;
+      this.stats.lastLatencyMs = Date.now() - started;
+      this.stats.lastFirstTokenMs = firstToken;
+      this.stats.lastTurnAt = new Date().toISOString();
+      this.onTurn?.();
       this.integrations.markSuccess('claude', { lastModel: result.model });
       return result;
     } catch (err) {
+      this.stats.errors += 1;
+      this.stats.lastError = err instanceof Error ? err.message : String(err);
       if (err instanceof ProviderError && err.kind === 'auth') this.integrations.markError('claude', err.message);
       throw err;
     }

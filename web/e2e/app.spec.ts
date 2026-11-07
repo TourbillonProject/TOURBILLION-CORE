@@ -289,7 +289,7 @@ test.describe('TOURBILLION CORE on iPad', () => {
   test('@portrait layout: core on top, panels below, no horizontal scrolling', async ({ page }) => {
     await signIn(page);
     const core = (await page.locator('.core-stage').boundingBox())!;
-    const status = (await page.locator('.panel', { hasText: 'System status' }).boundingBox())!;
+    const status = (await page.locator('.panel', { hasText: 'System intelligence' }).boundingBox())!;
     expect(core.y).toBeLessThan(status.y);
     expect(core.height).toBeGreaterThan(250);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
@@ -300,4 +300,74 @@ test.describe('TOURBILLION CORE on iPad', () => {
       expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), id).toBeLessThanOrEqual(0);
     }
   });
+
+  test('command center: boot skip, live telemetry, core diagnostics, seven agents', async ({ page }) => {
+    const errors = await signIn(page);
+    // The cinematic boot sequence plays after INITIALISE and can be skipped.
+    const skip = page.getByTestId('boot-skip');
+    if (await skip.count()) {
+      await skip.tap();
+      await expect(page.getByTestId('boot-sequence')).toHaveCount(0);
+    }
+    // Real telemetry: gauges fill and the performance chart draws once two samples exist.
+    const intel = page.locator('.panel', { hasText: 'System intelligence' });
+    await expect(intel.getByRole('img', { name: /^CPU (\d+%|unavailable)$/ })).toBeVisible();
+    await expect(intel).toContainText('Connected');
+    await expect(page.locator('.panel', { hasText: 'Performance' }).locator('.chart svg')).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId('ws-chip')).toContainText(/\d+ms/);
+    // Seven agents with their actual (idle) status.
+    await expect(page.locator('[data-testid^=agent-card-]')).toHaveCount(7);
+    await expect(page.getByTestId('agent-card-security')).toContainText('Security Intelligence');
+    await expect(page.getByTestId('agent-card-security')).toContainText('Idle');
+    await page.getByTestId('agent-card-security').getByRole('button', { name: /Show details/ }).tap();
+    await expect(page.getByTestId('agent-card-security')).toContainText('cisa_kev');
+    // Tapping the core opens AI diagnostics with real provider data and renderer statistics.
+    await page.locator('.core-stage').tap({ position: { x: 20, y: 20 } });
+    const diag = page.getByTestId('ai-diagnostics');
+    await expect(diag).toContainText('Anthropic Claude');
+    await expect(diag).toContainText('claude-opus-5-5');
+    await expect(diag).toContainText(/WebGL 3D|Canvas 2D/);
+    await page.getByRole('button', { name: 'Close' }).tap();
+    // An integration opens its diagnostics.
+    await page.getByTestId('app-claude').tap();
+    await expect(page.getByTestId('integration-diagnostics')).toContainText('Connected');
+    await page.getByRole('button', { name: 'Close' }).tap();
+    expect(errors).toEqual([]);
+  });
+
+  test('command center: a completed mission shows its execution history', async ({ page }) => {
+    await signIn(page);
+    const r = await page.request.post('/api/missions', { data: { playbook: 'security.posture', params: { days: 1 } }, headers: { 'x-tc-request': '1' } });
+    const id = (await r.json()).id as number;
+    await page.locator('.mtab', { hasText: 'Completed' }).tap();
+    await page.getByTestId(`cc-mission-${id}`).tap();
+    const history = page.getByTestId('mission-history');
+    await expect(history).toContainText('Security posture review');
+    await expect(history).toContainText('Verification: succeeded');
+    await page.getByRole('button', { name: 'Close' }).tap();
+  });
+
+  test('settings: graphics quality tiers apply to the core', async ({ page }) => {
+    await signIn(page);
+    await page.getByTestId('nav-settings').tap();
+    await page.getByRole('tab', { name: 'Performance' }).tap();
+    await page.getByTestId('nav-command').tap();
+    await expect(page.locator('.core-stage')).toHaveAttribute('data-quality', 'performance');
+    await expect(page.locator('html')).toHaveAttribute('data-quality', 'performance');
+    await page.getByTestId('nav-settings').tap();
+    await page.getByRole('tab', { name: 'Balanced' }).tap();
+    await expect(page.locator('html')).toHaveAttribute('data-quality', 'balanced');
+  });
+
+  test('responsive: desktop and phone widths have no horizontal scrolling', async ({ page }) => {
+    await signIn(page);
+    for (const [w, h] of [[1440, 900], [1280, 800], [390, 844]]) {
+      await page.setViewportSize({ width: w, height: h });
+      await page.waitForTimeout(400);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), `${w}x${h}`).toBeLessThanOrEqual(0);
+      await expect(page.locator('.core-stage')).toBeVisible();
+      await expect(page.getByTestId('command-input')).toBeVisible();
+    }
+  });
 });
+

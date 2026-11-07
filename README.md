@@ -10,9 +10,9 @@ Progressive Web App that is the command centre.
 
 | Area | What is real today |
 |---|---|
-| **Command Center** | Live 3D computational core (Three.js) that reacts to genuine system events — listening, thinking, researching, executing, speaking, error — with an automatic 2D fallback; system status, agent activity, missions, research, connected apps, notifications, execution history. |
+| **Command Center** | Cinematic 3D AI core (Three.js) that reacts to genuine system events — idle, listening, thinking, researching, executing, speaking, error, success — with Cinematic / Balanced / Performance graphics and an automatic 2D fallback; live server telemetry (CPU, RAM, network, event loop) with charts, seven agent cards, mission control, network topology, agent communication, mission timeline, connected apps with diagnostics, notifications and execution history; a skippable boot sequence. |
 | **Claude** | Official Anthropic SDK, streaming, adaptive thinking with visible reasoning summaries, server-side refusal fallback, prompt caching. API key stored encrypted on the server, never sent to the iPad. |
-| **Agents** | Core Intelligence plus five specialists (The Spider, Research, Developer, Operator, Creative) coordinated through one mission engine: plan → approval → execute → verify → report, with cancellation, retries, restart recovery and a full audit trail. |
+| **Agents** | Core Intelligence plus six specialists (The Spider, Research, Developer, Creative Operations, Security Intelligence, System Operator) coordinated through one mission engine: plan → approval → execute → verify → report, with cancellation, retries, restart recovery and a full audit trail. |
 | **The Spider** | Inspects real code projects (zip upload, git clone, or server folder): structure, dependency vulnerabilities (OSV.dev / npm audit), static security leads, approval-gated test runs, reviewable patches with conflict detection and revert. |
 | **Browser** | Reader mode (sanitised) and a **live remote Chromium** streamed to the iPad with touch, scroll and keyboard; tabs and history; AI page summaries; "Open in Safari" everywhere. |
 | **YouTube** | `youtube.com` works in the live browser; videos play natively on the iPad via YouTube's official IFrame Player API, whose real state is shown; blocked embeds fall back to Safari / the YouTube app. |
