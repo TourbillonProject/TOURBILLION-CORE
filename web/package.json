@@ -9,7 +9,7 @@
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json",
     "test": "vitest run",
-    "test:e2e": "playwright test --trace off"
+    "test:e2e": "vite build && playwright test --trace off"
   },
   "dependencies": {
     "@fontsource-variable/jetbrains-mono": "^5.3.0",

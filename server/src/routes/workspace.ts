@@ -312,7 +312,8 @@ export function registerSelfAuthRoutes(app: FastifyInstance, ctx: Ctx) {
     const tab = (req.params as { tab: string }).tab;
     ctx.browser.live.attach(tab, socket).catch((err: Error) => {
       socket.send(JSON.stringify({ type: 'error', message: err.message }));
-      socket.close(4404, 'tab not found');
+      // Only a missing tab ends the stream; other failures are reported and the viewer can retry (e.g. by resizing).
+      if (/Tab not found/.test(err.message)) socket.close(4404, 'tab not found');
     });
   });
 }

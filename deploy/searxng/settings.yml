@@ -1,0 +1,11 @@
+# Minimal SearXNG settings for TOURBILLION CORE. JSON output must be enabled.
+use_default_settings: true
+server:
+  secret_key: "change-me-to-a-long-random-string"
+  limiter: false
+  image_proxy: false
+search:
+  safe_search: 1
+  formats:
+    - html
+    - json

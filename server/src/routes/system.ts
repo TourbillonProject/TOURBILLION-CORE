@@ -108,7 +108,7 @@ export function registerSystemRoutes(app: FastifyInstance, ctx: Ctx) {
   app.get('/api/data/export', async (_req, reply) => {
     const tables = ['conversations', 'transcripts', 'memories', 'tasks', 'task_steps', 'approvals', 'artifacts', 'patches', 'projects', 'automations', 'notifications', 'browse_history', 'audit_log', 'settings', 'integrations'];
     const out: Record<string, unknown> = { exportedAt: new Date().toISOString(), system: 'TOURBILLION CORE', version: APP_VERSION, note: 'Credentials (secrets table) are intentionally excluded.' };
-    for (const t of tables) out[t] = ctx.db.all(`SELECT * FROM ${t}`);
+    for (const t of tables) out[t] = ctx.db.all(`SELECT * FROM ${t}`); // spider-ignore: fixed table list
     ctx.audit.record('owner', 'data.export', 'ok');
     reply.header('content-disposition', `attachment; filename="tourbillion-export-${new Date().toISOString().slice(0, 10)}.json"`);
     return out;
@@ -118,7 +118,7 @@ export function registerSystemRoutes(app: FastifyInstance, ctx: Ctx) {
     const b = z.object({ confirm: z.literal('DELETE EVERYTHING'), includeCredentials: z.boolean().default(false) }).parse(req.body);
     const tables = ['transcripts', 'runs', 'approvals', 'task_steps', 'artifacts', 'patches', 'tasks', 'conversations', 'memories', 'automations', 'notifications', 'browse_history'];
     ctx.db.tx(() => {
-      for (const t of tables) ctx.db.run(`DELETE FROM ${t}`);
+      for (const t of tables) ctx.db.run(`DELETE FROM ${t}`); // spider-ignore: fixed table list
       if (b.includeCredentials) ctx.db.run('DELETE FROM secrets');
     });
     ctx.audit.record('owner', 'data.wipe', 'ok', null, { includeCredentials: b.includeCredentials });

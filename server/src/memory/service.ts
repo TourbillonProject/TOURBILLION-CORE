@@ -141,7 +141,7 @@ export class MemoryService {
       where.push('project_id = ?');
       params.push(opts.projectId);
     }
-    const sql = `SELECT * FROM memories ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY updated_at DESC LIMIT ? OFFSET ?`;
+    const sql = `SELECT * FROM memories ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY updated_at DESC LIMIT ? OFFSET ?`; // spider-ignore: constant fragments, bound values
     return this.db.all<MemoryRow>(sql, ...params, opts.limit ?? 100, opts.offset ?? 0).map(toRecord);
   }
 

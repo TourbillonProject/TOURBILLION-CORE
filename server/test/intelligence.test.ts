@@ -219,6 +219,34 @@ describe('Agent missions', () => {
     expect(m.json.approvals.every((a: { status: string }) => a.status === 'expired')).toBe(true);
   });
 
+  it('Core delegates to a specialist, and the result flows back into the conversation', async () => {
+    const cid = await conversation();
+    fake.queue.push({ when: (b) => JSON.stringify(b.messages).includes('Research the history of the tourbillon') && !JSON.stringify(b.messages).includes('tool_result'), blocks: [{ type: 'tool_use', name: 'delegate_mission', input: { agent: 'research', title: 'Tourbillon history', request: 'Summarise the invention of the tourbillon with sources.' } }] });
+    fake.queue.push({ when: (b) => JSON.stringify(b.messages).includes('assigned to research'), blocks: [{ type: 'text', text: 'Research Intelligence is on it.' }] });
+    // The research agent's own mission: plan (read-only, so no plan approval), execute, verify.
+    fake.queue.push({ when: (b) => JSON.stringify(b.output_config?.format ?? {}).includes('successCriteria') && JSON.stringify(b.messages).includes('invention of the tourbillon'), blocks: [{ type: 'text', text: JSON.stringify({ interpretation: 'Summarise the invention.', steps: [{ title: 'Summarise', detail: '', tools: [], risk: 'read' }], requiredPermissions: [], successCriteria: ['Summary written'] }) }] });
+    fake.queue.push({ when: (b) => !b.output_config?.format && JSON.stringify(b.messages).includes('Approved plan') && JSON.stringify(b.messages).includes('invention of the tourbillon'), blocks: [{ type: 'text', text: 'Invented by Abraham-Louis Breguet, patented 1801 (source-reported).' }] });
+    fake.queue.push({ when: (b) => JSON.stringify(b.output_config?.format ?? {}).includes('unverified') && JSON.stringify(b.messages).includes('invention of the tourbillon'), blocks: [{ type: 'text', text: JSON.stringify({ outcome: 'unverified', summary: 'No sources were fetched in this mission.', evidence: [], unverified: ['Patent date'] }) }] });
+
+    await app.req('POST', `/api/conversations/${cid}/messages`, { text: 'Research the history of the tourbillon.' });
+    await turnDone(cid);
+    const missions = await waitFor(() => app.req('GET', '/api/missions'), (r) => r.json.some((m: { conversationId: number }) => m.conversationId === cid), 10_000, 'delegated mission');
+    const mission = missions.json.find((m: { conversationId: number }) => m.conversationId === cid);
+    expect(mission.agent).toBe('research');
+    const done = await waitFor(() => app.req('GET', `/api/missions/${mission.id}`), (r) => ['completed', 'failed'].includes(r.json.status), 20_000, 'research mission');
+    expect(done.json.verification.outcome).toBe('unverified'); // honest: no sources were actually fetched
+    const conv = await app.req('GET', `/api/conversations/${cid}`);
+    expect(conv.json.messages.at(-1)).toMatchObject({ role: 'notice' });
+    expect(conv.json.messages.at(-1).text).toContain(`Mission #${mission.id} (research) completed`);
+
+    // On the owner's next message, Core receives the mission result as context.
+    fake.queue.push({ when: (b) => JSON.stringify(b.messages).includes('mission_updates'), blocks: [{ type: 'text', text: 'The research is back: Breguet, 1801 — not yet verified against sources.' }] });
+    await app.req('POST', `/api/conversations/${cid}/messages`, { text: 'What did they find?' });
+    const after = await turnDone(cid);
+    expect(after.json.messages.at(-1).text).toContain('not yet verified');
+    expect(JSON.stringify(fake.requests.at(-1)!.body.messages.at(-1))).toContain('Breguet, patented 1801');
+  });
+
   it('marks in-flight missions as interrupted after a restart', async () => {
     const t = app.ctx.tasks.create({ title: 'Ghost', request: 'x', agent: 'research', start: false });
     app.ctx.db.run("UPDATE tasks SET status = 'running', plan = ? WHERE id = ?", JSON.stringify({ interpretation: '', steps: [], requiredPermissions: [], successCriteria: [] }), t.id);

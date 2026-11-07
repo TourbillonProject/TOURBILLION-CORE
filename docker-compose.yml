@@ -1,0 +1,27 @@
+# TOURBILLION CORE with an optional self-hosted SearXNG for web search.
+# Put HTTPS in front (Caddy, Tailscale Serve or a Cloudflare Tunnel) — see docs/SETUP.md.
+services:
+  tourbillion:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8787:8787"
+    env_file: .env
+    environment:
+      TC_SEARXNG_URL: http://searxng:8080
+    volumes:
+      - tc-data:/data
+      # Optional: code projects the Spider may inspect (also list them in TC_PROJECT_ROOTS)
+      # - /srv/code:/projects:rw
+    shm_size: "512mb" # Chromium
+
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    volumes:
+      - ./deploy/searxng:/etc/searxng:rw
+    environment:
+      SEARXNG_BASE_URL: http://searxng:8080/
+
+volumes:
+  tc-data:

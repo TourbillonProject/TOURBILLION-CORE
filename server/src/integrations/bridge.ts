@@ -110,7 +110,7 @@ export class BridgeHub {
     }
     this.db.run('DELETE FROM bridge_pairings WHERE code_hash = ?', sha256(code.trim().toUpperCase()));
     const token = `tcb_${randomToken(32)}`;
-    const { lastInsertRowid } = this.db.run('INSERT INTO bridges(name, token_hash, info, created_at) VALUES (?, ?, ?, ?)', `${row.name}`, sha256(token), JSON.stringify({ hostname }), nowIso());
+    const { lastInsertRowid } = this.db.run('INSERT INTO bridges(name, token_hash, info, created_at) VALUES (?, ?, ?, ?)', row.name, sha256(token), JSON.stringify({ hostname }), nowIso());
     this.audit.record('bridge', 'bridge.pair', 'ok', `${row.name} (${hostname})`);
     return { token, bridgeId: lastInsertRowid };
   }

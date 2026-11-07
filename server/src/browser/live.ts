@@ -302,8 +302,7 @@ export class LiveBrowser {
   async attach(id: string, ws: WebSocket) {
     const tab = this.tab(id);
     tab.viewers.add(ws);
-    ws.send(JSON.stringify({ type: 'state', ...this.state(tab) }));
-    if (!tab.cdp) await this.startScreencast(tab);
+    // Handlers first, so input sent while the screencast starts is not lost.
     ws.on('message', (raw) => void this.onInput(tab, String(raw)).catch((e: Error) => ws.send(JSON.stringify({ type: 'error', message: e.message }))));
     ws.on('close', () => {
       tab.viewers.delete(ws);
@@ -313,17 +312,44 @@ export class LiveBrowser {
         tab.cdp = null;
       }
     });
+    ws.send(JSON.stringify({ type: 'state', ...this.state(tab) }));
+    if (!tab.cdp) await this.startScreencast(tab);
+    // The screencast only emits on repaint; a page that is already idle would otherwise stay blank.
+    await this.snapshot(tab, ws);
   }
 
+  private async snapshot(tab: Tab, only?: WebSocket) {
+    try {
+      const shot = (await tab.cdp?.send('Page.captureScreenshot', { format: 'jpeg', quality: 60 })) as { data: string } | undefined;
+      if (!shot) return;
+      const buf = Buffer.from(shot.data, 'base64');
+      for (const v of only ? [only] : tab.viewers) if (v.readyState === v.OPEN) v.send(buf, { binary: true });
+    } catch {
+      /* page navigating; the screencast will deliver the next frame */
+    }
+  }
+
+  /** Starts the CDP screencast. Retries: during a navigation commit Chromium can reject the first attempt. */
   private async startScreencast(tab: Tab) {
-    const cdp = await tab.page.context().newCDPSession(tab.page);
-    tab.cdp = cdp;
-    cdp.on('Page.screencastFrame', (frame) => {
-      const buf = Buffer.from(frame.data, 'base64');
-      for (const v of tab.viewers) if (v.readyState === v.OPEN && v.bufferedAmount < 2_000_000) v.send(buf, { binary: true });
-      void cdp.send('Page.screencastFrameAck', { sessionId: frame.sessionId }).catch(() => {});
-    });
-    await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 60, maxWidth: tab.viewport.width, maxHeight: tab.viewport.height, everyNthFrame: 1 });
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 6; attempt++) {
+      if (tab.page.isClosed()) throw new Error('Tab not found (closed).');
+      try {
+        const cdp = await tab.page.context().newCDPSession(tab.page);
+        cdp.on('Page.screencastFrame', (frame) => {
+          const buf = Buffer.from(frame.data, 'base64');
+          for (const v of tab.viewers) if (v.readyState === v.OPEN && v.bufferedAmount < 2_000_000) v.send(buf, { binary: true });
+          void cdp.send('Page.screencastFrameAck', { sessionId: frame.sessionId }).catch(() => {});
+        });
+        await cdp.send('Page.startScreencast', { format: 'jpeg', quality: 60, maxWidth: tab.viewport.width, maxHeight: tab.viewport.height, everyNthFrame: 1 });
+        tab.cdp = cdp;
+        return;
+      } catch (err) {
+        lastErr = err;
+        await new Promise((r) => setTimeout(r, 150 * (attempt + 1)));
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error('Could not start the screen stream');
   }
 
   private async onInput(tab: Tab, raw: string) {
@@ -344,7 +370,8 @@ export class LiveBrowser {
         if (tab.cdp) {
           await tab.cdp.send('Page.stopScreencast').catch(() => {});
           await tab.cdp.send('Page.startScreencast', { format: 'jpeg', quality: 60, maxWidth: width, maxHeight: height, everyNthFrame: 1 });
-        }
+        } else await this.startScreencast(tab);
+        await this.snapshot(tab);
         break;
       }
       case 'tap':

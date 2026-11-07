@@ -217,7 +217,7 @@ export class TaskEngine {
       params.push(filter.projectId);
     }
     return this.ctx.db
-      .all<TaskRow>(`SELECT * FROM tasks ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY id DESC LIMIT ?`, ...params, filter.limit ?? 100)
+      .all<TaskRow>(`SELECT * FROM tasks ${where.length ? `WHERE ${where.join(' AND ')}` : ''} ORDER BY id DESC LIMIT ?`, ...params, filter.limit ?? 100) // spider-ignore: constant fragments, bound values
       .map((r) => this.toRecord(r));
   }
 
@@ -240,10 +240,14 @@ export class TaskEngine {
     this.ctx.bus.emit({ type: 'task.step', taskId, step });
   }
 
+  private static readonly COLUMNS = new Set(['status', 'interpretation', 'plan', 'verification', 'report', 'error', 'started_at', 'finished_at']);
+
   private update(id: number, patch: Partial<Record<keyof TaskRow, unknown>>) {
     const keys = Object.keys(patch);
     if (!keys.length) return;
-    this.ctx.db.run(`UPDATE tasks SET ${keys.map((k) => `${k} = ?`).join(', ')}, updated_at = ? WHERE id = ?`, ...keys.map((k) => patch[k as keyof TaskRow]), nowIso(), id);
+    // Column names come only from this allowlist; values are bound parameters.
+    for (const k of keys) if (!TaskEngine.COLUMNS.has(k)) throw new Error(`Refusing to update unknown column ${k}`);
+    this.ctx.db.run(`UPDATE tasks SET ${keys.map((k) => `${k} = ?`).join(', ')}, updated_at = ? WHERE id = ?`, ...keys.map((k) => patch[k as keyof TaskRow]), nowIso(), id); // spider-ignore: allowlisted columns, bound values
     const t = this.get(id);
     if (t) this.ctx.bus.emit({ type: 'task.updated', task: t });
   }

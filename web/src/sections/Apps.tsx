@@ -146,8 +146,8 @@ function BridgePanel() {
         <div className="panel flat" style={{ padding: 10 }}>
           <div className="small">Pairing code (expires {new Date(code.expiresAt).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}):</div>
           <div className="display" style={{ fontSize: 26, letterSpacing: '.3em', margin: '4px 0 8px', color: 'var(--cyan)' }} data-testid="pairing-code">{code.code}</div>
-          <div className="tiny muted">On the computer with Blender / Roblox Studio (Node.js 22+):</div>
-          <pre>{`npx tourbillion-bridge pair --server ${server} --code ${code.code}\nnpx tourbillion-bridge start`}</pre>
+          <div className="tiny muted">On the computer with Blender / Roblox Studio (Node.js 22+), in a copy of this repository:</div>
+          <pre>{`npm install && npm run build -w bridge\nnode bridge/dist/bridge.js init        # then edit ~/.tourbillion-bridge/config.json\nnode bridge/dist/bridge.js pair --server ${server} --code ${code.code}\nnode bridge/dist/bridge.js start`}</pre>
           <div className="tiny muted">The bridge only operates inside folders you list in its config file and never accepts arbitrary commands.</div>
         </div>
       )}
