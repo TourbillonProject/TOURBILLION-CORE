@@ -111,8 +111,8 @@ export class BrowserService {
   async search(query: string): Promise<{ engine: string; results: SearchResult[] }> {
     if (this.config.searxngUrl) {
       const res = await safeFetch(`${this.config.searxngUrl}/search?${new URLSearchParams({ q: query, format: 'json', language: 'en-GB', safesearch: '1' })}`, {
-        // A self-hosted SearXNG usually lives on the private network; that one host is explicitly trusted by configuration.
-        policy: { allowPrivateNetwork: true },
+        // A self-hosted SearXNG usually lives on the private network: trust exactly that host, nothing else.
+        policy: { ...this.policy, trustedHosts: [...(this.policy.trustedHosts ?? []), new URL(this.config.searxngUrl).hostname.toLowerCase()] },
         timeoutMs: 15_000,
         headers: { accept: 'application/json' },
       });

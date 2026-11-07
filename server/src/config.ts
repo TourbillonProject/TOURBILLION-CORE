@@ -38,6 +38,7 @@ export interface AppConfig {
   masterKey: string | null;
   ownerPassphrase: string | null;
   sessionDays: number;
+  rateLimitPerMinute: number;
   anthropic: {
     apiKey: string | null;
     baseUrl: string;
@@ -90,6 +91,7 @@ export function loadConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     masterKey: e.TC_MASTER_KEY ?? null,
     ownerPassphrase: e.TC_OWNER_PASSPHRASE ?? null,
     sessionDays: int(e.TC_SESSION_DAYS, 30),
+    rateLimitPerMinute: int(e.TC_RATE_LIMIT_PER_MIN, 600),
     anthropic: {
       apiKey: e.TC_ANTHROPIC_API_KEY ?? null,
       // Deliberately NOT reading ANTHROPIC_BASE_URL: tooling on a dev machine may set it for other purposes.

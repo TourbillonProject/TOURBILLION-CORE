@@ -89,7 +89,7 @@ export async function buildApp(overrides: Partial<AppConfig> = {}, opts: { logge
   });
 
   await app.register(cookie);
-  await app.register(rateLimit, { global: true, max: 600, timeWindow: '1 minute', allowList: [] });
+  await app.register(rateLimit, { global: true, max: config.rateLimitPerMinute, timeWindow: '1 minute' });
   await app.register(websocket, { options: { maxPayload: 1024 * 1024 } });
   await app.register(multipart, { limits: { fileSize: 200 * 1024 * 1024, files: 1 } });
   app.addHook('onRequest', securityHeaders((req) => isHttpsRequest(req, config.trustProxy)));

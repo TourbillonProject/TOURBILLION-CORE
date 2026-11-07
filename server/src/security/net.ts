@@ -76,6 +76,8 @@ export class NetworkPolicyError extends Error {
 
 export interface NetPolicy {
   allowPrivateNetwork: boolean;
+  /** Exact hostnames that may resolve to private addresses (e.g. a LAN SearXNG). Redirects away from them are still checked. */
+  trustedHosts?: string[];
 }
 
 export function parsePublicUrl(raw: string): URL {
@@ -95,16 +97,17 @@ export function parsePublicUrl(raw: string): URL {
 /** Resolves a hostname and validates every address against the policy. */
 export async function resolveAllowed(hostname: string, policy: NetPolicy): Promise<{ address: string; family: number }[]> {
   const host = hostname.replace(/^\[|\]$/g, '');
+  const trusted = policy.allowPrivateNetwork || (policy.trustedHosts ?? []).includes(host.toLowerCase());
   let addrs: { address: string; family: number }[];
   if (net.isIP(host)) {
     addrs = [{ address: host, family: net.isIP(host) }];
   } else {
-    if (/^(localhost|.*\.localhost|.*\.local|.*\.internal)$/i.test(host) && !policy.allowPrivateNetwork) {
+    if (/^(localhost|.*\.localhost|.*\.local|.*\.internal)$/i.test(host) && !trusted) {
       throw new NetworkPolicyError(`Blocked internal hostname: ${host}`);
     }
     addrs = await dns.promises.lookup(host, { all: true, verbatim: true });
   }
-  if (!policy.allowPrivateNetwork) {
+  if (!trusted) {
     const bad = addrs.find((a) => isPrivateAddress(a.address));
     if (bad) throw new NetworkPolicyError(`Blocked private or reserved address ${bad.address} for ${host}`);
   }

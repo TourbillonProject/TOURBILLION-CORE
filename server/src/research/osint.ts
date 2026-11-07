@@ -52,7 +52,19 @@ async function getJson<T>(url: string, mc: ModuleContext, headers: Record<string
 
 const DOMAIN_RE = /^(?=.{1,253}$)(?!-)([a-z0-9-]{1,63}\.)+[a-z]{2,63}$/i;
 
+class TargetError extends Error {
+  statusCode = 400;
+}
+
 export function normaliseTarget(type: ResearchTargetType, raw: string): string {
+  try {
+    return normaliseInner(type, raw);
+  } catch (err) {
+    throw new TargetError(err instanceof Error ? err.message : String(err));
+  }
+}
+
+function normaliseInner(type: ResearchTargetType, raw: string): string {
   const v = raw.trim();
   switch (type) {
     case 'domain': {

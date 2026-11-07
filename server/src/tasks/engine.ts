@@ -294,9 +294,9 @@ export class TaskEngine {
     let params = input.params ?? {};
     if (kind === 'playbook') {
       const pb = this.playbooks.get(input.playbook ?? '');
-      if (!pb) throw new Error(`Unknown playbook ${input.playbook}`);
+      if (!pb) throw Object.assign(new Error(`Unknown playbook ${input.playbook}`), { statusCode: 400 });
       const parsed = pb.params.safeParse(params);
-      if (!parsed.success) throw new Error(`Invalid parameters: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);
+      if (!parsed.success) throw Object.assign(new Error(`Invalid parameters: ${parsed.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`), { statusCode: 400 });
       params = parsed.data as Record<string, unknown>;
     }
     const now = nowIso();

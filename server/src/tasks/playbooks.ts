@@ -42,14 +42,14 @@ const spiderInspect: Playbook<z.ZodObject<{ projectId: z.ZodNumber; runChecks: z
     const scan = await pc.tool('security_scan', { projectId: p.projectId, minSeverity: 'low' });
     const scanData = scan.data as { findings: ScanFinding[]; filesScanned: number } | undefined;
     const checkResults: { id: string; passed: boolean | null; summary: string }[] = [];
+    const requestedChecks = p.runChecks ? detectChecks(pc.ctx.projects.require(p.projectId)).filter((c) => !p.checks || p.checks.includes(c.id)) : [];
+    if (p.runChecks && requestedChecks.length === 0) pc.step('No matching checks were found in this project.', undefined, 'error');
     if (p.runChecks) {
-      const listed = await pc.tool('run_project_check', { projectId: p.projectId });
-      const ids = listed.content.split('\n').map((l) => l.split(':')[0]).filter((x) => x && !x.startsWith('No runnable'));
-      for (const id of ids.filter((x) => !p.checks || p.checks.includes(x))) {
+      for (const id of requestedChecks.map((c) => c.id)) {
         pc.step(`Requesting approval to run ${id}…`);
         const r = await pc.tool('run_project_check', { projectId: p.projectId, checkId: id });
         const d = r.data as { passed?: boolean; exitCode?: number; durationMs?: number } | undefined;
-        checkResults.push({ id, passed: d?.passed ?? null, summary: d ? `exit ${d.exitCode} in ${d.durationMs} ms` : r.content.slice(0, 200) });
+        checkResults.push({ id, passed: r.isError && !d ? null : (d?.passed ?? null), summary: d ? `exit ${d.exitCode} in ${d.durationMs} ms` : r.content.slice(0, 200) });
       }
     }
     const depData = deps.data as { deps?: unknown[]; osv?: { vulns: Vulnerability[] }; npm?: { ok: boolean; advisories: unknown[] } } | undefined;
@@ -79,12 +79,18 @@ const spiderInspect: Playbook<z.ZodObject<{ projectId: z.ZodNumber; runChecks: z
       );
       report += review ? `\n\n### Analyst review (Claude — inference)\n${review}` : '\n\n_Analyst review skipped: Claude is not connected._';
     }
-    const failedChecks = checkResults.filter((c) => c.passed === false);
+    const failedChecks = checkResults.filter((c) => c.passed !== true);
+    const missingChecks = p.runChecks && checkResults.length === 0;
     const verification: TaskVerification = {
-      outcome: !overviewData || !scanData ? 'failed' : failedChecks.length || (!depData?.osv && !depData?.npm?.ok) ? 'partial' : 'succeeded',
+      outcome: !overviewData || !scanData ? 'failed' : failedChecks.length || missingChecks || (!depData?.osv && !depData?.npm?.ok) ? 'partial' : 'succeeded',
       summary: `Mapped ${overviewData?.files ?? 0} files, ${scanData?.findings.length ?? 0} scan leads, ${vulns.length} dependency advisories${checkResults.length ? `, ${checkResults.length - failedChecks.length}/${checkResults.length} checks passed` : ''}.`,
       evidence: [ov.isError ? 'overview failed' : 'project_overview completed', deps.isError ? 'dependency audit failed' : 'dependency_audit completed', scan.isError ? 'scan failed' : 'security_scan completed', ...checkResults.map((c) => `${c.id}: ${c.summary}`)],
-      unverified: [...(!depData?.osv && !depData?.npm?.ok ? ['Dependency vulnerabilities (no database reachable)'] : []), 'Static scan leads are unconfirmed pattern matches'],
+      unverified: [
+        ...(!depData?.osv && !depData?.npm?.ok ? ['Dependency vulnerabilities (no database reachable)'] : []),
+        ...(missingChecks ? ['Requested checks did not run (none found or none approved)'] : []),
+        ...checkResults.filter((c) => c.passed === null).map((c) => `${c.id} did not run`),
+        'Static scan leads are unconfirmed pattern matches',
+      ],
     };
     return { report, verification };
   },

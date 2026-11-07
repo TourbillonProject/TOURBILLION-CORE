@@ -48,7 +48,8 @@ export class BridgeHub {
       permissions: ['Read/write files only inside folders you allow in the bridge config', 'Run Blender in background mode (scripts only if enabled locally)', 'Run named Roblox project tasks you define (e.g. rojo build, selene)'],
       requires: ['A paired computer running `tourbillion-bridge start`'],
       isConfigured: () => this.paired().length > 0,
-      liveState: () => (this.conns.size > 0 ? 'connected' : this.paired().length > 0 ? 'disconnected' : null),
+      // "connected" only after the bridge has completed its capability handshake.
+      liveState: () => ([...this.conns.values()].some((c) => c.hello) ? 'connected' : this.conns.size > 0 ? 'configured' : this.paired().length > 0 ? 'disconnected' : null),
       details: () => ({ connected: this.listConnected().map((c) => ({ name: c.name, hostname: c.hello?.hostname, platform: c.hello?.platform })), paired: this.paired().length }),
       test: async () => {
         const c = this.first();
@@ -145,7 +146,7 @@ export class BridgeHub {
   }
 
   first(): BridgeConn | null {
-    return this.conns.values().next().value ?? null;
+    return [...this.conns.values()].find((c) => c.hello) ?? this.conns.values().next().value ?? null;
   }
 
   capabilities() {

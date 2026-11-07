@@ -217,7 +217,7 @@ export function spiderTools(): ToolDef[] {
         const min = order.indexOf(i.minSeverity ?? 'low');
         const shown = r.findings.filter((f) => order.indexOf(f.severity) <= min);
         return {
-          content: `Scanned ${r.filesScanned} files with ${r.rules} rules: ${r.findings.length} lead(s), ${shown.length} at ${i.minSeverity ?? 'low'}+.\n${shown.slice(0, 120).map((f) => `[${f.severity}] ${f.rule} ${f.file}:${f.line} — ${f.title}\n    ${f.snippet}`).join('\n')}`,
+          content: `Scanned ${r.filesScanned} files with ${r.rules} rules: ${r.findings.length} lead(s), ${shown.length} at ${i.minSeverity ?? 'low'}+, ${r.suppressed} suppressed by spider-ignore comments.\n${shown.slice(0, 120).map((f) => `[${f.severity}] ${f.rule} ${f.file}:${f.line} — ${f.title}\n    ${f.snippet}`).join('\n')}`,
           data: r,
         };
       },

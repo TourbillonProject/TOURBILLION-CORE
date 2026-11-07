@@ -1,3 +1,4 @@
+// spider-ignore-file: this file defines the patterns The Spider detects.
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
@@ -16,6 +17,8 @@ const LANGUAGES: Record<string, string> = {
   cs: 'C#', php: 'PHP', lua: 'Lua', luau: 'Luau', sh: 'Shell', bash: 'Shell', ps1: 'PowerShell', sql: 'SQL', html: 'HTML', css: 'CSS', scss: 'CSS',
   vue: 'Vue', svelte: 'Svelte', json: 'JSON', yml: 'YAML', yaml: 'YAML', toml: 'TOML', md: 'Markdown', dart: 'Dart', scala: 'Scala', r: 'R',
 };
+const DATA_FORMATS = new Set(['JSON', 'YAML', 'TOML', 'Markdown']);
+const LOCKFILES = /(^|\/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|Cargo\.lock|Gemfile\.lock|poetry\.lock|composer\.lock|go\.sum)$/;
 const TEXT_EXT = new Set([...Object.keys(LANGUAGES), 'txt', 'env', 'ini', 'cfg', 'conf', 'xml', 'gradle', 'properties', 'dockerfile', 'lock']);
 
 export function isTextFile(rel: string): boolean {
@@ -71,7 +74,7 @@ export function overview(projects: ProjectService, project: Project, onFile?: (r
     if (/(^|\/)(test|tests|__tests__|spec)\/|\.(test|spec)\.[a-z]+$|_test\.(go|py)$/.test(f.rel)) hasTests = true;
     const ext = f.rel.split('.').pop()?.toLowerCase() ?? '';
     const lang = LANGUAGES[ext];
-    if (!lang || f.size > 2_000_000) continue;
+    if (!lang || f.size > 2_000_000 || LOCKFILES.test(f.rel)) continue;
     onFile?.(f.rel);
     const text = readText(path.join(root, f.rel));
     const n = text ? text.split('\n').length : 0;
@@ -89,7 +92,8 @@ export function overview(projects: ProjectService, project: Project, onFile?: (r
     files: files.length,
     totalBytes,
     lines,
-    languages: [...langs.entries()].map(([language, v]) => ({ language, ...v })).sort((a, b) => b.lines - a.lines),
+    // Code languages first (by lines), then data/document formats.
+    languages: [...langs.entries()].map(([language, v]) => ({ language, ...v })).sort((a, b) => Number(DATA_FORMATS.has(a.language)) - Number(DATA_FORMATS.has(b.language)) || b.lines - a.lines),
     topLevel: [...top.entries()].map(([name, n]) => ({ name, files: n })).sort((a, b) => b.files - a.files).slice(0, 30),
     manifests: manifests.slice(0, 50),
     scripts,
@@ -281,7 +285,7 @@ const RULES: Rule[] = [
   { id: 'js.tls-disabled', title: 'TLS certificate verification disabled', severity: 'high', langs: ['js', 'ts', 'mjs', 'cjs'], re: /rejectUnauthorized\s*:\s*false|NODE_TLS_REJECT_UNAUTHORIZED\s*=\s*['"]?0/, advice: 'Keep certificate verification on; trust a specific CA instead.' },
   { id: 'js.weak-random', title: 'Math.random used for something that looks security-sensitive', severity: 'medium', langs: ['js', 'ts', 'jsx', 'tsx'], re: /(token|secret|password|nonce|salt|session)[^\n]{0,40}Math\.random\(\)|Math\.random\(\)[^\n]{0,40}(token|secret|password|nonce|salt|session)/i, advice: 'Use crypto.randomBytes / crypto.getRandomValues.' },
   { id: 'js.cors-any-credentials', title: 'Permissive CORS with credentials', severity: 'medium', langs: ['js', 'ts'], re: /origin\s*:\s*(true|['"]\*['"])[^\n]{0,80}credentials\s*:\s*true/, advice: 'Restrict allowed origins when credentials are allowed.' },
-  { id: 'sql.concat', title: 'SQL query built by string concatenation', severity: 'high', langs: ['js', 'ts', 'py', 'php', 'rb', 'java', 'go', 'cs'], re: /(SELECT|INSERT|UPDATE|DELETE)\b[^\n;]{0,80}(['"`]\s*\+\s*\w|\$\{\w|%s['"]\s*%|f["'][^"']*\{)/i, advice: 'Use parameterised queries / prepared statements.' },
+  { id: 'sql.concat', title: 'SQL statement built with interpolation or concatenation', severity: 'high', langs: ['js', 'ts', 'py', 'php', 'rb', 'java', 'go', 'cs'], re: /\b(SELECT\s[^\n;]{0,80}?\bFROM|INSERT\s+INTO|UPDATE\s+[\w"`.]+\s+SET|DELETE\s+FROM)\b[^\n;]{0,120}?(\$\{|['"`]\s*\+\s*\w|%s['"]\s*%|f["'][^"']*\{)/i, advice: 'Use parameterised queries; if fragments are composed dynamically, make sure only constant fragments are interpolated.' },
   { id: 'py.subprocess-shell', title: 'subprocess with shell=True', severity: 'high', langs: ['py'], re: /subprocess\.\w+\([^)]*shell\s*=\s*True/, advice: 'Pass an argument list and shell=False.' },
   { id: 'py.yaml-load', title: 'yaml.load without a safe loader', severity: 'high', langs: ['py'], re: /yaml\.load\((?![^)]*Loader\s*=\s*(yaml\.)?SafeLoader)/, advice: 'Use yaml.safe_load.' },
   { id: 'py.pickle', title: 'Unpickling data', severity: 'medium', langs: ['py'], re: /pickle\.loads?\(/, advice: 'Never unpickle untrusted data; use JSON.' },
@@ -305,18 +309,24 @@ export interface ScanFinding {
   confidence: 'pattern-match';
 }
 
-export function securityScan(projects: ProjectService, project: Project, onFile?: (rel: string) => void): { findings: ScanFinding[]; filesScanned: number; rules: number } {
+export function securityScan(projects: ProjectService, project: Project, onFile?: (rel: string) => void): { findings: ScanFinding[]; filesScanned: number; rules: number; suppressed: number } {
   const files = projects.walk(project).filter((f) => isTextFile(f.rel) && f.size < 1_000_000 && !/\.min\.(js|css)$/.test(f.rel) && !f.rel.endsWith('package-lock.json'));
   const findings: ScanFinding[] = [];
   let scanned = 0;
+  let suppressed = 0;
   for (const f of files) {
     const text = readText(path.join(project.path, f.rel));
     if (text === null) continue;
     scanned += 1;
     onFile?.(f.rel);
-    const ext = f.rel.split('.').pop()?.toLowerCase() ?? '';
-    const isTest = /(^|\/)(test|tests|__tests__|spec|fixtures?)\/|\.(test|spec)\.[a-z]+$/.test(f.rel);
     const lines = text.split('\n');
+    // Explicit, visible suppressions: "spider-ignore-file" in the first lines, or "spider-ignore" on a line.
+    if (lines.slice(0, 5).some((l) => l.includes('spider-ignore-file'))) {
+      suppressed += 1;
+      continue;
+    }
+    const ext = f.rel.split('.').pop()?.toLowerCase() ?? '';
+    const isTest = /(^|\/)(test|tests|__tests__|spec|fixtures?|e2e)\/|\.(test|spec)\.[a-z]+$/.test(f.rel);
     for (const rule of RULES) {
       if (rule.langs && !rule.langs.includes(ext)) continue;
       if (rule.skipTests && isTest) continue;
@@ -325,8 +335,23 @@ export function securityScan(projects: ProjectService, project: Project, onFile?
         const line = lines[i];
         if (line.length > 2000) continue;
         if (rule.re.test(line)) {
+          if (line.includes('spider-ignore') || (i > 0 && lines[i - 1].includes('spider-ignore-next-line'))) {
+            suppressed += 1;
+            continue;
+          }
           hits += 1;
-          findings.push({ rule: rule.id, title: rule.title, severity: rule.severity, file: f.rel, line: i + 1, snippet: line.trim().slice(0, 200).replace(/(sk-ant-|AKIA|ghp_)[A-Za-z0-9_-]{6,}/g, '$1••••'), advice: rule.advice, confidence: 'pattern-match' });
+          // Credentials inside test fixtures are usually fakes: still reported, at low severity.
+          const inTest = isTest && rule.id.startsWith('secret.');
+          findings.push({
+            rule: rule.id,
+            title: inTest ? `${rule.title} (in a test file — likely a fixture)` : rule.title,
+            severity: inTest ? 'low' : rule.severity,
+            file: f.rel,
+            line: i + 1,
+            snippet: line.trim().slice(0, 200).replace(/(sk-ant-|AKIA|ghp_)[A-Za-z0-9_-]{6,}/g, '$1••••'),
+            advice: rule.advice,
+            confidence: 'pattern-match',
+          });
         }
       }
     }
@@ -334,7 +359,7 @@ export function securityScan(projects: ProjectService, project: Project, onFile?
   }
   const order: Severity[] = ['critical', 'high', 'medium', 'low', 'info'];
   findings.sort((a, b) => order.indexOf(a.severity) - order.indexOf(b.severity));
-  return { findings, filesScanned: scanned, rules: RULES.length };
+  return { findings, filesScanned: scanned, rules: RULES.length, suppressed };
 }
 
 // ---------------------------------------------------------------------------

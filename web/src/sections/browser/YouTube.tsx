@@ -76,7 +76,7 @@ export function YouTubePlayer({ videoId, title }: { videoId: string; title?: str
       .then((YT) => {
         if (cancelled || !host.current) return;
         const el = document.createElement('div');
-        host.current.innerHTML = '';
+        host.current.replaceChildren();
         host.current.appendChild(el);
         player.current = new YT.Player(el, {
           host: 'https://www.youtube-nocookie.com',

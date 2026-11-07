@@ -29,7 +29,7 @@ export class AnthropicProvider implements AIProvider {
   private client(): Anthropic {
     const apiKey = this.getApiKey();
     if (!apiKey) throw new ProviderNotConfiguredError();
-    return new Anthropic({ apiKey, baseURL: this.baseURL, maxRetries: 2, timeout: 10 * 60_000 });
+    return new Anthropic({ apiKey, authToken: null, baseURL: this.baseURL, maxRetries: 2, timeout: 10 * 60_000 });
   }
 
   async test(): Promise<Record<string, unknown>> {
