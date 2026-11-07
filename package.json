@@ -1,0 +1,17 @@
+{
+  "name": "tourbillion-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TOURBILLION CORE — personal AI operating environment (server + iPad PWA + desktop bridge)",
+  "license": "UNLICENSED",
+  "engines": { "node": ">=22.13" },
+  "workspaces": ["shared", "server", "web", "bridge"],
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "npm run build -w web && npm run build -w server && npm run build -w bridge",
+    "start": "node server/dist/server.js",
+    "typecheck": "npm run typecheck -w shared -w server -w web -w bridge",
+    "test": "npm run test -w server && npm run test -w web",
+    "test:e2e": "npm run test:e2e -w web"
+  }
+}

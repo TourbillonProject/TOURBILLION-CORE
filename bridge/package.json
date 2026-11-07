@@ -1,0 +1,25 @@
+{
+  "name": "tourbillion-bridge",
+  "version": "0.1.0",
+  "description": "Desktop bridge that lets TOURBILLION CORE operate Blender and Roblox Studio project files on your computer, with a local allowlist.",
+  "type": "module",
+  "bin": { "tourbillion-bridge": "dist/bridge.js" },
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "tsx src/cli.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "ws": "^8.22.1"
+  },
+  "devDependencies": {
+    "@tc/shared": "*",
+    "@types/node": "^22.19.0",
+    "@types/ws": "^8.18.2",
+    "esbuild": "^0.28.2",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.2",
+    "vitest": "^5.1.0"
+  }
+}

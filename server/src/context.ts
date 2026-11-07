@@ -1,0 +1,53 @@
+import type { AppConfig } from './config.js';
+import type { Database } from './db.js';
+import type { AuthService } from './security/auth.js';
+import type { Cipher } from './security/crypto.js';
+import type { NetPolicy } from './security/net.js';
+import type { SecretStore } from './security/secrets.js';
+import type { AuditLog, EventBus, Notifications, SettingsStore } from './services/core.js';
+import type { IntegrationRegistry } from './services/integrations.js';
+import type { AIService } from './ai/service.js';
+import type { MemoryService } from './memory/service.js';
+import type { ConversationService } from './intelligence/conversations.js';
+import type { ToolRegistry } from './tools/registry.js';
+import type { AgentRegistry } from './agents/registry.js';
+import type { ApprovalService } from './tasks/approvals.js';
+import type { TaskEngine } from './tasks/engine.js';
+import type { ProjectService } from './spider/projects.js';
+import type { BrowserService } from './browser/service.js';
+import type { ResearchService } from './research/service.js';
+import type { GmailService } from './integrations/gmail.js';
+import type { BridgeHub } from './integrations/bridge.js';
+import type { AutomationService } from './automations/service.js';
+import type { PatchService } from './spider/patches.js';
+
+/** Service container handed to every route module. */
+export interface Ctx {
+  config: AppConfig;
+  db: Database;
+  cipher: Cipher;
+  secrets: SecretStore;
+  auth: AuthService;
+  bus: EventBus;
+  audit: AuditLog;
+  settings: SettingsStore;
+  notifications: Notifications;
+  integrations: IntegrationRegistry;
+  net: NetPolicy;
+  ai: AIService;
+  memory: MemoryService;
+  conversations: ConversationService;
+  tools: ToolRegistry;
+  agents: AgentRegistry;
+  approvals: ApprovalService;
+  tasks: TaskEngine;
+  projects: ProjectService;
+  patches: PatchService;
+  browser: BrowserService;
+  research: ResearchService;
+  gmail: GmailService;
+  bridge: BridgeHub;
+  automations: AutomationService;
+  clientCount: () => number;
+  startedAt: number;
+}
