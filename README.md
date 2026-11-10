@@ -6,6 +6,10 @@ Progressive Web App that is the command centre.
 
 > Formerly NEXUS → JARVIS → KEENAN CORE. Owner: Keenan. Primary intelligence: Anthropic Claude.
 
+## Quick start on a Mac
+
+Download and unzip the project, then double-click **`Start TOURBILLION.command`**. It installs everything it needs on the first run, opens the app in your browser and copies the one-time setup code to the clipboard. Details: [docs/SETUP.md](docs/SETUP.md).
+
 ## What it does
 
 | Area | What is real today |

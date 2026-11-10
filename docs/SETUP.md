@@ -16,6 +16,16 @@ The iPad 8th generation cannot run Node.js, Chromium-as-a-service, Blender or Ro
 
 ## 1. Install and run
 
+### On a Mac: one double-click
+
+1. Download the project (green **Code** button → **Download ZIP** on GitHub) and unzip it, e.g. into Documents.
+2. Double-click **`Start TOURBILLION.command`**. The first time, macOS may say it can't verify the file: right-click it → **Open** → **Open** (on macOS 15+, use System Settings → Privacy & Security → **Open Anyway**).
+3. The first run downloads a private copy of Node.js into the folder (no admin password), installs and builds the app (a few minutes), then opens it in your browser. The one-time setup code is copied to the clipboard — paste it, choose a passphrase.
+
+Later runs start in seconds. Keep the Terminal window open while you use it; close it to stop. Your data lives in `~/Library/Application Support/TOURBILLION CORE`, so replacing the folder with a newer download keeps it. If Google Chrome is installed it powers the live remote browser. The window also prints the address for an iPad on the same Wi-Fi.
+
+### Any platform: from the command line
+
 ```bash
 git clone https://github.com/TourbillonProject/TOURBILLION-CORE.git
 cd TOURBILLION-CORE
